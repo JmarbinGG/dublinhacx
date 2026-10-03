@@ -7,7 +7,7 @@ type Kind = 'draw' | 'fade' | 'spread' | 'fan' | 'bloom' | 'drop'
 // Start state for each kind of growth (the end state is the element at rest).
 const FROM: Record<Kind, Keyframe> = {
   draw: { strokeDashoffset: 1 }, // strands and limbs draw on (pathLength=1)
-  fade: { opacity: 0 }, // the solid trunk fill behind the strands
+  fade: { opacity: 0, transform: 'scaleY(0)' }, // trunk fill rises from the base with the strands
   spread: { opacity: 0, transform: 'scaleX(0)' }, // ground patch from its centre
   fan: { opacity: 0, transform: 'scaleX(0.15)' }, // buttress roots fan out
   bloom: { opacity: 0, transform: 'scale(0.6)' }, // a canopy region
@@ -15,7 +15,7 @@ const FROM: Record<Kind, Keyframe> = {
 }
 const TO: Record<Kind, Keyframe> = {
   draw: { strokeDashoffset: 0 },
-  fade: { opacity: 1 },
+  fade: { opacity: 1, transform: 'none' },
   spread: { opacity: 1, transform: 'none' },
   fan: { opacity: 1, transform: 'none' },
   bloom: { opacity: 1, transform: 'none' },
@@ -24,11 +24,32 @@ const TO: Record<Kind, Keyframe> = {
 
 const TONES = ['tree__deep', 'tree__mid', 'tree__light']
 
+// The shot's single curve: Penner easeOutQuad, G(x) = 1 - (1 - x)^2
+// (scripts/design.mjs placed every start time on it).
+const G = (x: number) => 1 - (1 - x) ** 2
+const LINEAR_FN = typeof CSS !== 'undefined' && CSS.supports('animation-timing-function', 'linear(0, 1)')
+
+/**
+ * Each element plays its own slice [start, start + dur] of the shared
+ * curve, renormalised to 0..1 - so it decelerates with the whole tree
+ * instead of moving linearly (easing skill: no linear motion on a physical
+ * object), and still has no curve of its own. Sampled into CSS linear().
+ */
+function sliceEasing(start: number, dur: number, total: number): string {
+  if (!LINEAR_FN) return 'ease-out'
+  const a = G(start / total)
+  const b = G(Math.min(1, (start + dur) / total))
+  if (b - a < 1e-4) return 'linear'
+  const pts = []
+  for (let i = 0; i <= 8; i++) pts.push(((G(Math.min(1, (start + (dur * i) / 8) / total)) - a) / (b - a)).toFixed(3))
+  return `linear(${pts.join(', ')})`
+}
+
 /**
  * The landing page banyan. Geometry and the whole timeline were computed at
- * build time (scripts/design.mjs) on one shared clock with a single ease-out
- * baked into the start times - so every animation here runs linear, and the
- * tree grows in one continuous ~4 s motion, then holds.
+ * build time (scripts/design.mjs, storyboard there) on one shared clock with
+ * a single ease-out; each element plays its slice of that curve, so the
+ * tree grows in one continuous ~4 s motion, then holds on the final frame.
  *
  * Plays on every load and when the page comes back from the back-forward
  * cache. Running animations are cancelled before starting, so a double
@@ -56,7 +77,7 @@ export default function BanyanTree() {
           el.animate([FROM[kind], TO[kind]], {
             duration: Number(dur),
             delay: Number(start),
-            easing: 'linear', // the global ease-out is already in the start times
+            easing: sliceEasing(Number(start), Number(dur), TREE.T),
             fill: 'backwards',
           }),
         )

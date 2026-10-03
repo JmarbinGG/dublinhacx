@@ -179,6 +179,29 @@ function rng(seed) {
 const rotate = ([x, y], a) => [x * Math.cos(a) - y * Math.sin(a), x * Math.sin(a) + y * Math.cos(a)]
 const r1 = (n) => Math.round(n * 10) / 10
 
+/*
+ * STORYBOARD (motion-graphics-toolkit: storyboard before code). One shot,
+ * one clock, ~4 s, holds on the final frame - which is also the static
+ * picture used for reduced motion / data saver.
+ *
+ * BEAT  CLOCK (approx)  ON SCREEN                                   CARRIES INTO
+ * 1     0.0-0.3 s       Ground patch spreads from its centre          trunk base sits on it
+ * 2     0.1-0.6 s       Six-seven trunk strands rise together,        limbs start where the
+ *                       solid fill fades in behind them               trunk reaches them
+ * 3     0.3-0.5 s       Buttress roots fan out low along the ground   (overlaps beat 2's end)
+ * 4     0.4-1.6 s       Limbs grow up and out, thick at the trunk     canopy regions bloom as
+ *                                                                     their limb finishes
+ * 5     0.5-1.9 s       Canopy blooms: middle first, then outward     roots drop from beneath
+ *                       (12 regions, scale 0.6->1 + fade)             each region as it appears
+ * 6     0.8-4.0 s       Aerial roots lengthen downward, staggered     hold: final frame
+ *
+ * Easing (easing-curves-timing-design): ONE curve for the whole shot,
+ * Penner easeOutQuad G(x) = 1 - (1 - x)^2 (cubic-bezier(0.5, 1, 0.89, 1)),
+ * a gentle entrance curve. Each element plays its own slice of it (see
+ * BanyanTree.tsx), so nothing moves linearly and no element has a curve
+ * of its own. Durations scale with length (constant growth speed).
+ */
+
 /**
  * Stylized banyan in a 400 x 300 box: a wide lumpy dome canopy (~75% of
  * the height), a twisted multi-strand trunk (~12% of the width) flaring

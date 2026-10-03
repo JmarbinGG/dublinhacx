@@ -1739,6 +1739,7 @@ textarea {
    their centre, the ground from its middle, roots grow down from the top. */
 .tree__ground,
 .tree__buttress,
+.tree__fill,
 .tree__bloom,
 .tree__roots {
   transform-box: fill-box;
@@ -1746,7 +1747,8 @@ textarea {
 }
 
 .tree__ground,
-.tree__buttress {
+.tree__buttress,
+.tree__fill {
   transform-origin: center bottom;
 }
 
