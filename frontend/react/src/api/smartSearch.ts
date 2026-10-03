@@ -143,9 +143,49 @@ function parse(raw: unknown): SmartPage {
   }
 }
 
+// ---------- search version (cache busting) ----------
+
+/**
+ * The backend's search_version changes whenever search results could change
+ * (search code or models). It's part of every cache key, so a backend fix
+ * shows up immediately instead of after the 15-minute cache expires.
+ * Fetched once per session from GET /api/meta (~30 bytes); any smart
+ * response carrying a newer version updates it straight away. Offline, the
+ * last known version is used so saved searches still work.
+ */
+const VERSION_KEY = 'banyan.searchVersion'
+let knownVersion: string | null = (() => {
+  try {
+    return localStorage.getItem(VERSION_KEY)
+  } catch {
+    return null
+  }
+})()
+let versionChecked: Promise<void> | null = null
+
+function rememberVersion(v: unknown) {
+  if (typeof v !== 'string' || !v || v.length > 64 || v === knownVersion) return
+  knownVersion = v
+  try {
+    localStorage.setItem(VERSION_KEY, v)
+  } catch {
+    // Fine - it's re-fetched next session.
+  }
+}
+
+function checkVersion(): Promise<void> {
+  versionChecked ??= request<{ search_version?: unknown }>('/api/meta', { timeoutMs: 5000 })
+    .then((meta) => rememberVersion(meta.search_version))
+    .catch(() => {
+      versionChecked = null // offline or old backend: try again next search
+    })
+  return versionChecked
+}
+
 /** One request to /api/search/smart, served from cache when fresh. */
 export async function smartStep(body: SmartBody, token: string | null, signal?: AbortSignal): Promise<SmartResult> {
-  const key = `smart:${JSON.stringify({ ...body, limit: body.limit ?? SMART_PAGE })}`
+  await checkVersion()
+  const key = `smart:${knownVersion ?? '-'}:${JSON.stringify({ ...body, limit: body.limit ?? SMART_PAGE })}`
   const cached = readCache<SmartPage>(key)
   if (cached && Date.now() - cached.savedAt < FRESH_MS) {
     return { ...cached.data, source: 'smart', note: null, cachedAt: null }
@@ -159,6 +199,13 @@ export async function smartStep(body: SmartBody, token: string | null, signal?: 
       timeoutMs: 20_000,
     })
     const page = parse(raw)
+    const v = (raw as { version?: unknown } | null)?.version
+    if (typeof v === 'string' && v !== knownVersion) {
+      // The backend changed mid-session: store under the new version.
+      rememberVersion(v)
+      writeCache(`smart:${v}:${JSON.stringify({ ...body, limit: body.limit ?? SMART_PAGE })}`, page)
+      return { ...page, source: 'smart', note: null, cachedAt: null }
+    }
     writeCache(key, page)
     return { ...page, source: 'smart', note: null, cachedAt: null }
   } catch (error) {
