@@ -29,6 +29,7 @@ from typing import Optional
 import requests
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
+from sqlalchemy import or_
 from sqlalchemy.orm import Session as DbSession, joinedload
 
 import communities
@@ -38,7 +39,15 @@ from database import get_db
 from limits import ai_rate_limit
 from models import Listing, User
 from prompting import SAFETY_RULES, fence, listing_for_prompt
-from routers.listings import base_query, keyword_filter, listing_out, ranked_recall, with_distances
+from routers.listings import (
+    base_query,
+    keyword_filter,
+    listing_out,
+    name_filter,
+    origin_for,
+    ranked_recall,
+    with_distances,
+)
 from routers.users import user_keyword_filter
 from schemas import (
     AIPick,
@@ -56,6 +65,7 @@ router = APIRouter(prefix="/api/search", tags=["search"])
 SEARCH_TIMEOUT_S = 5
 AI_CANDIDATES = 15  # most listings ever sent to the LLM in one call
 AI_MAX_PICKS = 5
+NEAR_KM = 50  # filters.scope == "near" (matches the frontend's NEARBY_KM)
 
 
 # ---------- GET /api/search ----------
@@ -120,6 +130,9 @@ def search(
     q: str = Query("", max_length=MAX_QUERY_CHARS),
     type: Optional[ListingType] = None,
     community_id: Optional[str] = None,
+    community: Optional[str] = Query(None, max_length=120, description="...or by town name"),
+    lat: Optional[float] = Query(None, ge=-90, le=90, description="With lng: adds distance_km"),
+    lng: Optional[float] = Query(None, ge=-180, le=180),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0, le=1000),
     user: Optional[User] = Depends(optional_user),
@@ -128,19 +141,25 @@ def search(
     """Sync def on purpose: the search-service call blocks, and FastAPI runs
     sync routes in a thread pool so it can't freeze other requests."""
     q = q.strip()
-    community = communities.resolve(db, community_id)
+    resolved = communities.resolve(db, community_id)
+    town = resolved.name if resolved else community
     listing_q = base_query(db).filter(Listing.status == "available")
     user_q = db.query(User)
     if type:
         listing_q = listing_q.filter(Listing.type == type)
-    if community:
-        listing_q = listing_q.filter(User.community == community.name)
-        user_q = user_q.filter(User.community == community.name)
+    if town:
+        listing_q = listing_q.filter(name_filter(User.community, town))
+        user_q = user_q.filter(name_filter(User.community, town))
     listing_q = listing_q.order_by(Listing.created_at.desc(), Listing.id.desc())
+    origin = origin_for(db, None, lat, lng)
+
+    def out(rows: list[Listing]):
+        # Keep relevance order; only attach distances.
+        return [listing_out(l, d) for l, d in with_distances(db, rows, origin)]
 
     if not q:
         listings = listing_q.offset(offset).limit(limit).all()
-        return SearchResponse(query=q, engine="keyword", listings=[listing_out(l) for l in listings],
+        return SearchResponse(query=q, engine="keyword", listings=out(listings),
                               users=[], limit=limit, offset=offset)
 
     want = offset + limit
@@ -150,7 +169,7 @@ def search(
     service = None
     if os.getenv("SEARCH_SERVICE_URL"):
         ai_rate_limit("search", request, user)
-        service = _search_service(q, type, community.name if community else None, want)
+        service = _search_service(q, type, town, want)
 
     if service is not None:
         # Hybrid: the service's ranking first, then keyword hits it missed.
@@ -165,7 +184,7 @@ def search(
     return SearchResponse(
         query=q,
         engine=engine,
-        listings=[listing_out(l) for l in listings[offset:want]],
+        listings=out(listings[offset:want]),
         users=[UserPublic.model_validate(u) for u in users[offset:want]],
         limit=limit,
         offset=offset,
@@ -214,7 +233,7 @@ def _keyword_overview(q: str, rows: list[Listing]) -> tuple[str, list[AIPick]]:
         hay = f"{l.title} {l.tags or ''} {l.category or ''}".lower()
         matched = [w for w in words if w in hay]
         picks.append(AIPick(id=l.id, why=f"Matches: {', '.join(matched)}" if matched else "Related listing"))
-    summary = (f"Top {len(picks)} keyword matches." if picks
+    summary = (("Top keyword match." if len(picks) == 1 else f"Top {len(picks)} keyword matches.") if picks
                else "No listings match yet - try other words or post a request.")
     return summary, picks
 
@@ -233,9 +252,10 @@ def ai_search(
     ai_rate_limit("search_ai", request, user)
     q = body.q.strip()
     f = body.filters
-    origin = communities.resolve(db, body.community_id)
-    if f.max_km is not None and origin is None:
-        raise HTTPException(status_code=422, detail="Invalid request")
+    origin = communities.resolve_any(db, body.community_id, body.community)
+    max_km = f.max_km or (NEAR_KM if f.scope == "near" else None)
+    if max_km is not None and origin is None:
+        max_km = None  # no home town to measure from: ignore the distance limit
 
     query = base_query(db).filter(Listing.status == "available")
     if f.type:
@@ -246,6 +266,10 @@ def ai_search(
         query = query.filter(Listing.exchange == f.exchange)
     if f.category:
         query = query.filter(Listing.category.ilike(f.category))
+    if origin and f.scope == "town":
+        query = query.filter(User.community == origin.name)
+    elif origin and f.scope == "others":
+        query = query.filter(or_(User.community.is_(None), User.community != origin.name))
     query = query.order_by(Listing.created_at.desc(), Listing.id.desc())
 
     # Recall: keyword (all words) + ranked any-word + the search service, deduped.
@@ -254,7 +278,7 @@ def ai_search(
     service = _search_service(q, f.type, None, AI_CANDIDATES)
     if service:
         candidates = _merge(_hydrate(Listing, service[0], query), candidates)
-    pairs = with_distances(db, candidates, origin, None, f.max_km, "newest")[:AI_CANDIDATES]
+    pairs = with_distances(db, candidates, origin, None, max_km, "newest")[:AI_CANDIDATES]
     by_id = {l.id: l for l, _ in pairs}
     distances = {l.id: d for l, d in pairs}
 

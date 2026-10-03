@@ -82,7 +82,7 @@ class UserUpdate(BaseModel):
 class SignupRequest(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     email: EmailStr
-    password: str = Field(min_length=6)
+    password: str = Field(min_length=8, max_length=128)
     community: Optional[str] = Field(None, max_length=120)
     bio: Optional[str] = Field(None, max_length=BIO_MAX)
     photo: Optional[str] = None
@@ -223,13 +223,17 @@ class AISearchFilters(BaseModel):
     kind: Optional[ListingKind] = None
     exchange: Optional[ExchangeType] = None
     category: Optional[str] = Field(None, max_length=60)
-    max_km: Optional[float] = Field(None, gt=0, le=1000)  # needs community_id
+    max_km: Optional[float] = Field(None, gt=0, le=1000)  # needs a community
+    # The frontend's town scope: town = only the shopper's community,
+    # others = everywhere else, near = within 50 km.
+    scope: Optional[Literal["all", "town", "others", "near"]] = None
 
 
 class AISearchRequest(BaseModel):
     q: str = Field(min_length=1, max_length=MAX_QUERY_CHARS)
     filters: AISearchFilters = AISearchFilters()
     community_id: Optional[str] = Field(None, max_length=120)
+    community: Optional[str] = Field(None, max_length=120)  # town name; either works
 
 
 class AIPick(BaseModel):
@@ -252,6 +256,7 @@ class AISearchResponse(BaseModel):
 
 class AssistantSessionCreate(BaseModel):
     community_id: Optional[str] = Field(None, max_length=120)
+    community: Optional[str] = Field(None, max_length=120)
 
 
 class AssistantSessionOut(BaseModel):
@@ -265,6 +270,7 @@ class AssistantChatRequest(BaseModel):
     session_id: str = Field(min_length=1, max_length=64)
     message: str = Field(min_length=1, max_length=500)
     community_id: Optional[str] = Field(None, max_length=120)
+    community: Optional[str] = Field(None, max_length=120)
 
 
 class Chip(BaseModel):

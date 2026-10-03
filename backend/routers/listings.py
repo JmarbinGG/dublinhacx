@@ -13,6 +13,7 @@ from models import Listing, User
 from storage import delete_if_orphaned
 from schemas import (
     BatchRequest,
+    ExchangeType,
     BatchResponse,
     BatchResult,
     ListingCreate,
@@ -23,6 +24,11 @@ from schemas import (
     ListingUpdate,
 )
 from textutil import MAX_QUERY_CHARS, like_pattern, query_words
+
+
+def name_filter(column, name: str):
+    """Case-insensitive exact match on a town name, with LIKE wildcards escaped."""
+    return column.ilike(like_pattern(name)[1:-1], escape="\\")
 
 router = APIRouter(prefix="/api/listings", tags=["listings"])
 
@@ -125,10 +131,13 @@ def owned_listing(db: DbSession, listing_id: int, user: User) -> Listing:
 def list_listings(
     type: Optional[ListingType] = None,
     kind: Optional[ListingKind] = None,
+    exchange: Optional[ExchangeType] = None,
     status: Optional[ListingStatus] = "available",
     category: Optional[str] = Query(None, max_length=60),
     community_id: Optional[str] = Query(None, description="Only this community (slug from /api/communities)"),
+    community: Optional[str] = Query(None, max_length=120, description="...or by town name"),
     exclude_community_id: Optional[str] = Query(None, description="Everything except this community - 'other towns'"),
+    exclude_community: Optional[str] = Query(None, max_length=120, description="...or by town name"),
     owner_id: Optional[int] = None,
     q: Optional[str] = Query(None, max_length=MAX_QUERY_CHARS, description="Keyword filter, first 8 words"),
     from_community: Optional[str] = Query(None, description="Measure distance_km from this community's centre"),
@@ -136,7 +145,10 @@ def list_listings(
     lng: Optional[float] = Query(None, ge=-180, le=180),
     min_km: Optional[float] = Query(None, ge=0, description="Distance band, needs an origin: d > min_km"),
     max_km: Optional[float] = Query(None, gt=0, description="Distance band, needs an origin: d <= max_km"),
-    sort: Literal["newest", "nearest", "farthest"] = "newest",
+    radius_km: Optional[float] = Query(None, gt=0, description="Same as max_km"),
+    sort: Optional[Literal["newest", "nearest", "farthest"]] = Query(
+        None, description="Default: nearest when an origin is given, else newest"
+    ),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: DbSession = Depends(get_db),
@@ -146,22 +158,30 @@ def list_listings(
         query = query.filter(Listing.type == type)
     if kind:
         query = query.filter(Listing.kind == kind)
+    if exchange:
+        query = query.filter(Listing.exchange == exchange)
     if status:
         query = query.filter(Listing.status == status)
     if category:
         query = query.filter(Listing.category.ilike(category))
     if community_id:
         query = query.filter(User.community == communities.resolve(db, community_id).name)
+    if community:
+        query = query.filter(name_filter(User.community, community))
     if exclude_community_id:
         excluded = communities.resolve(db, exclude_community_id).name
         query = query.filter(or_(User.community.is_(None), User.community != excluded))
+    if exclude_community:
+        query = query.filter(or_(User.community.is_(None), ~name_filter(User.community, exclude_community)))
     if owner_id is not None:
         query = query.filter(Listing.owner_id == owner_id)
     if q:
         query = query.filter(*keyword_filter(q))
     query = query.order_by(Listing.created_at.desc(), Listing.id.desc())
 
+    max_km = max_km or radius_km
     origin = origin_for(db, from_community, lat, lng)
+    sort = sort or ("nearest" if origin else "newest")
     if origin is None:
         if sort != "newest" or min_km is not None or max_km is not None:
             raise HTTPException(status_code=422, detail="Distance sort/band needs from_community or lat+lng")

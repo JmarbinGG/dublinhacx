@@ -8,7 +8,7 @@ import communities
 from auth import current_user
 from database import get_db
 from models import User
-from routers.listings import listing_out, origin_for
+from routers.listings import listing_out, name_filter, origin_for
 from storage import delete_if_orphaned
 from schemas import CommunityOut, ProfileOut, UserPrivate, UserPublic, UserUpdate
 from textutil import MAX_QUERY_CHARS, like_pattern, query_words
@@ -33,11 +33,13 @@ def user_keyword_filter(q: Optional[str]):
 @router.get("/api/users", response_model=list[UserPublic])
 def list_users(
     community_id: Optional[str] = None,
+    community: Optional[str] = Query(None, max_length=120, description="...or by town name"),
     q: Optional[str] = Query(None, max_length=MAX_QUERY_CHARS, description="Keyword match on name, bio, community"),
     from_community: Optional[str] = Query(None, description="With max_km: people within max_km of this community"),
     lat: Optional[float] = Query(None, ge=-90, le=90),
     lng: Optional[float] = Query(None, ge=-180, le=180),
     max_km: Optional[float] = Query(None, gt=0),
+    radius_km: Optional[float] = Query(None, gt=0, description="Same as max_km"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: DbSession = Depends(get_db),
@@ -45,7 +47,10 @@ def list_users(
     query = db.query(User)
     if community_id:
         query = query.filter(User.community == communities.resolve(db, community_id).name)
+    if community:
+        query = query.filter(name_filter(User.community, community))
     query = query.filter(*user_keyword_filter(q))
+    max_km = max_km or radius_km
     users = query.order_by(User.id).all()
 
     origin = origin_for(db, from_community, lat, lng)

@@ -85,6 +85,13 @@ def resolve(db: DbSession, community_id: Optional[str]) -> Optional[Community]:
     return community
 
 
+def resolve_any(db: DbSession, community_id: Optional[str] = None, name: Optional[str] = None) -> Optional[Community]:
+    """For AI/search endpoints that accept either the slug id or the town
+    name. Unknown values are ignored (None) rather than an error."""
+    key = community_id or slugify(name)
+    return all_communities(db).get(key) if key else None
+
+
 def distance_between(index: dict[str, Community], origin: Optional[Community], name: Optional[str]) -> Optional[float]:
     """km between `origin` and the community called `name`, centre to centre."""
     if origin is None or origin.lat is None or origin.lng is None:

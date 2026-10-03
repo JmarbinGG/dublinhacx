@@ -252,7 +252,7 @@ def create_session(
     db: DbSession = Depends(get_db),
 ):
     ai_rate_limit("assistant_session", request, user)
-    community = communities.resolve(db, body.community_id if body else None)
+    community = communities.resolve_any(db, body.community_id, body.community) if body else None
     if community is None and user is not None:
         community_name = user.community
     else:
@@ -290,8 +290,9 @@ def chat(
         raise HTTPException(status_code=410, detail="This chat expired. Start a new one.")
     if sess.turns >= MAX_TURNS or sess.tokens_used >= SESSION_TOKEN_BUDGET:
         raise HTTPException(status_code=409, detail="This chat reached its limit. Start a new one.")
-    if body.community_id:
-        sess.community = communities.resolve(db, body.community_id).name
+    community = communities.resolve_any(db, body.community_id, body.community)
+    if community:
+        sess.community = community.name
 
     message = body.message.strip()
     if CHIP_RE.match(message.lower()):
