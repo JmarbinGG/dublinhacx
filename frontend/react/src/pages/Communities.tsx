@@ -1,4 +1,6 @@
 import { Link } from 'react-router-dom'
+import HomePicker from '../components/HomePicker'
+import Stats from '../components/Stats'
 import { Loading } from '../components/States'
 import { useCommunities } from '../context/CommunityContext'
 import { distanceKm } from '../lib/geo'
@@ -15,31 +17,26 @@ export default function Communities() {
   })
 
   return (
-    <section className="categories-page">
+    <section className="stack">
       <h1>Towns</h1>
-      <p className="page-intro">
-        Like a banyan's roots growing into new trunks, every town here is its own centre - and all of them are
-        connected.
-      </p>
-      <div className="category-grid">
+      <Stats />
+      <HomePicker id="towns-home" />
+      <ul className="town-list">
         {rows.map((c) => (
-          <Link key={c.name} to={`/communities/${encodeURIComponent(c.name)}`} className="category-card">
-            <span>
-              <span className="category-name">
+          <li key={c.name}>
+            <Link to={`/communities/${encodeURIComponent(c.name)}`} className="town">
+              <span className="town__name">
                 {c.name}
-                {c.name === home && <span className="badge">Your town</span>}
+                {c.name === home && <span className="tag">Your town</span>}
               </span>
-              <span className="category-blurb">
-                {c.members} {c.members === 1 ? 'neighbour' : 'neighbours'}
-                {c.km != null && ` · ${Math.round(c.km)} km away`}
+              <span className="town__meta">
+                {c.listings} open · {c.members} {c.members === 1 ? 'neighbour' : 'neighbours'}
+                {c.km != null && ` · ${Math.round(c.km)} km`}
               </span>
-            </span>
-            <span className="category-count" title="Open listings">
-              {c.listings}
-            </span>
-          </Link>
+            </Link>
+          </li>
         ))}
-      </div>
+      </ul>
     </section>
   )
 }

@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AI_TEXT_LIMIT } from '../../api/ai'
 import { isAbort } from '../../api/client'
 import { getListing } from '../../api/listings'
 import { useCommunities } from '../../context/CommunityContext'
-import { useAssistant, type ChatMessage } from '../../context/AssistantContext'
-import { useDataBudget } from '../../context/DataBudgetContext'
+import { AssistantProvider, useAssistant, type ChatMessage } from '../../context/AssistantContext'
 import { useOnline } from '../../hooks/useOnline'
+import { flipFrom } from '../../lib/motion'
+import Icon from '../Icon'
 import { kindLabel, typeLabel, type Listing } from '../../types'
 
 /** Listings the assistant pointed to, fetched by id from our own API. Ids
@@ -73,36 +74,38 @@ function Message({ message, onChip, disabled }: { message: ChatMessage; onChip: 
   )
 }
 
+type PanelProps = { origin: DOMRect | null; onClose: () => void }
+
 /**
- * Floating "Ask Banyan" assistant. It asks clarifying questions, then points
- * to real listings. Offline, the history is read-only and a typed message
- * waits for an explicit "Send now".
+ * The assistant panel. It asks clarifying questions, then points to real
+ * listings. Offline, the history is read-only and a typed message waits
+ * for an explicit "Send now". Loaded on first open (see AssistantLauncher).
  */
-export default function AssistantWidget() {
+function AssistantPanel({ origin, onClose }: PanelProps) {
   const assistant = useAssistant()
-  const { aiAnswers } = useDataBudget()
   const online = useOnline()
   const [draft, setDraft] = useState('')
+  const panelRef = useRef<HTMLElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
+  // FLIP: grow out of the launcher button.
+  useLayoutEffect(() => {
+    if (panelRef.current && origin) flipFrom(panelRef.current, origin)
+    inputRef.current?.focus()
+  }, [origin])
+
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight })
-  }, [assistant.messages.length, assistant.pending, assistant.open])
+  }, [assistant.messages.length, assistant.pending])
 
   useEffect(() => {
-    if (assistant.open) inputRef.current?.focus()
-  }, [assistant.open])
-
-  if (!aiAnswers) return null
-
-  if (!assistant.open) {
-    return (
-      <button type="button" className="chat-launcher" onClick={() => assistant.setOpen(true)}>
-        Ask Banyan
-      </button>
-    )
-  }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
 
   const busy = assistant.pending || assistant.coolingDown
   const submit = (text: string) => {
@@ -112,7 +115,7 @@ export default function AssistantWidget() {
   }
 
   return (
-    <section className="chat" role="dialog" aria-label="Banyan assistant">
+    <section className="chat" role="dialog" aria-label="Banyan assistant" ref={panelRef}>
       <header className="chat__header">
         <strong>Ask Banyan</strong>
         <span className="chat__sub">Tell me what you need - I'll find who has it.</span>
@@ -120,8 +123,8 @@ export default function AssistantWidget() {
           <button type="button" className="link-button" onClick={assistant.reset}>
             New chat
           </button>
-          <button type="button" className="link-button" onClick={() => assistant.setOpen(false)} aria-label="Close assistant">
-            Close
+          <button type="button" className="icon-button" onClick={onClose} aria-label="Close assistant">
+            <Icon name="x" />
           </button>
         </div>
       </header>
@@ -148,7 +151,7 @@ export default function AssistantWidget() {
       {assistant.failedTurns >= 2 && (
         <div className="chat__handoff">
           Not finding it?{' '}
-          <Link to="/search" onClick={() => assistant.setOpen(false)}>
+          <Link to="/search" onClick={onClose}>
             Browse listings
           </Link>{' '}
           or{' '}
@@ -197,5 +200,15 @@ export default function AssistantWidget() {
         {draft.length}/{AI_TEXT_LIMIT} · Never share phone numbers or addresses here.
       </p>
     </section>
+  )
+}
+
+/** Lazy-loaded entry: the conversation state lives with the panel, so none
+ * of the assistant's code is in the first page load. */
+export default function Assistant(props: PanelProps) {
+  return (
+    <AssistantProvider>
+      <AssistantPanel {...props} />
+    </AssistantProvider>
   )
 }

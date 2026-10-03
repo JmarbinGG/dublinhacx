@@ -17,8 +17,8 @@ import { mockAssistantReply, mockOverview } from './aiMock'
  * a local demo so the UI can be exercised. Demo answers are labelled as such.
  */
 
-export const AI_TEXT_LIMIT = 500
-export const QUERY_LIMIT = 200
+export { AI_TEXT_LIMIT, QUERY_LIMIT, cleanText, redactPersonal } from '../lib/text'
+import { AI_TEXT_LIMIT, QUERY_LIMIT, cleanText } from '../lib/text'
 
 export type AiPick = { id: number; why: string }
 
@@ -86,20 +86,6 @@ function parseReply(raw: unknown): AssistantReply {
 }
 
 // ---- helpers ----
-
-/** Trim, collapse whitespace, cap length. The backend re-checks all of this. */
-export function cleanText(text: string, max: number): string {
-  return text.replace(/\s+/g, ' ').trim().slice(0, max)
-}
-
-/** Never send contact details or coordinates to the AI. */
-export function redactPersonal(text: string): { text: string; redacted: boolean } {
-  const redactedText = text
-    .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '[email removed]')
-    .replace(/\+?\d[\d\s-]{7,}\d/g, '[number removed]')
-    .replace(/-?\d{1,3}\.\d{3,}\s*,\s*-?\d{1,3}\.\d{3,}/g, '[location removed]')
-  return { text: redactedText, redacted: redactedText !== text }
-}
 
 const shouldUseDemo = (error: unknown) => import.meta.env.DEV && error instanceof ApiError && error.status === 404
 

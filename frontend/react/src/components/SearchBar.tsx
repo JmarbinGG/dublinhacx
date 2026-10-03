@@ -1,20 +1,21 @@
 import { useState } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { QUERY_LIMIT, cleanText } from '../api/ai'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { QUERY_LIMIT, cleanText } from '../lib/text'
 import { useDataBudget } from '../context/DataBudgetContext'
+import Icon from './Icon'
 
 type Props = {
-  /** Pre-fill the input, e.g. with the query from the URL. */
+  /** Pre-fill the input. Callers pass key={query} so back/forward re-syncs it. */
   initialQuery?: string
-  size?: 'large' | 'small'
+  size?: 'bar' | 'large'
 }
 
 /**
- * Search input + Search, an on-demand "Ask AI" overview, Browse, and a round
- * "+" to share something. Submitting keeps the current filters when already
- * on /search. Callers pass key={query} so back/forward re-syncs the box.
+ * One search field with a small inline "Ask AI" (on-demand overview, never
+ * per keystroke). Submitting keeps the current filters when already on
+ * /search.
  */
-export default function SearchBar({ initialQuery = '', size = 'small' }: Props) {
+export default function SearchBar({ initialQuery = '', size = 'bar' }: Props) {
   const [value, setValue] = useState(initialQuery)
   const navigate = useNavigate()
   const location = useLocation()
@@ -33,47 +34,38 @@ export default function SearchBar({ initialQuery = '', size = 'small' }: Props) 
   }
 
   return (
-    <div className={`search-bar-row search-bar-row--${size}`}>
-      <div className="search-bar">
-        <form
-          className="search-bar__form"
-          role="search"
-          onSubmit={(event) => {
-            event.preventDefault()
-            go(false)
-          }}
+    <form
+      className={`search search--${size}`}
+      role="search"
+      onSubmit={(event) => {
+        event.preventDefault()
+        go(false)
+      }}
+    >
+      <Icon name="search" />
+      <input
+        type="search"
+        value={value}
+        maxLength={QUERY_LIMIT}
+        onChange={(event) => setValue(event.target.value)}
+        placeholder={size === 'large' ? 'Pump set, tailoring, drip pipe...' : 'Search'}
+        aria-label="Search listings and people"
+        enterKeyHint="search"
+      />
+      {aiAnswers && (
+        <button
+          type="button"
+          className="search__ai"
+          disabled={!value.trim()}
+          title="A short AI overview of the best matches (about 2 KB)"
+          onClick={() => go(true)}
         >
-          <input
-            type="search"
-            value={value}
-            maxLength={QUERY_LIMIT}
-            onChange={(event) => setValue(event.target.value)}
-            placeholder="Pump set, tailoring, drip pipe..."
-            aria-label="Search listings and people"
-          />
-          <button type="submit" className="primary-button">
-            Search
-          </button>
-        </form>
-        {aiAnswers && (
-          <button
-            type="button"
-            className="secondary-button search-bar__ai"
-            disabled={!value.trim()}
-            title="Get a short AI overview of the best matches"
-            onClick={() => go(true)}
-          >
-            Ask AI
-          </button>
-        )}
-        <Link to="/search" className="secondary-button">
-          Browse
-        </Link>
-      </div>
-
-      <Link to="/listings/new" className="new-listing-fab" aria-label="Share something">
-        +
-      </Link>
-    </div>
+          Ask AI
+        </button>
+      )}
+      <button type="submit" className="visually-hidden">
+        Search
+      </button>
+    </form>
   )
 }

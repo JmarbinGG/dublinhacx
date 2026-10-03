@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { useOnline } from '../hooks/useOnline'
 import { QUEUE_CHANGED_EVENT, flushQueue, readQueue } from '../offline/syncQueue'
+import Icon from './Icon'
 
 const pendingCount = () => readQueue().filter((entry) => !entry.error).length
 
@@ -36,7 +37,8 @@ export default function ConnectionStatus() {
 
   if (!online) {
     return (
-      <div className="connection-banner connection-banner--offline" role="status">
+      <div className="banner banner--warn" role="status">
+        <Icon name="offline" />
         You're offline - showing saved listings.
         {pending > 0 && ` ${plural(pending)} will post when you reconnect.`}
       </div>
@@ -45,7 +47,8 @@ export default function ConnectionStatus() {
 
   if (pending > 0 && !token) {
     return (
-      <div className="connection-banner" role="status">
+      <div className="banner" role="status">
+        <Icon name="alert" />
         {plural(pending)} waiting to post - sign in to send them.
       </div>
     )
@@ -53,7 +56,8 @@ export default function ConnectionStatus() {
 
   if (justSynced > 0) {
     return (
-      <div className="connection-banner connection-banner--ok" role="status">
+      <div className="banner banner--ok" role="status">
+        <Icon name="check" />
         Back online - posted {plural(justSynced)} saved while offline.
         <button type="button" className="link-button" onClick={() => setJustSynced(0)}>
           Dismiss

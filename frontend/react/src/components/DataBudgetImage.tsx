@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { resolveImageUrl } from '../api/client'
+import { canCheckSize, resolveImageUrl } from '../api/client'
 import { formatKb, useDataBudget } from '../context/DataBudgetContext'
 
 type Props = {
@@ -14,9 +14,11 @@ type Props = {
 const sizeCache = new Map<string, number | null>()
 
 function useImageSize(url: string | null, enabled: boolean): number | null | undefined {
-  const [size, setSize] = useState<number | null | undefined>(() => (url ? sizeCache.get(url) : null))
+  const [size, setSize] = useState<number | null | undefined>(() =>
+    !url || !canCheckSize(url) ? null : sizeCache.get(url),
+  )
   useEffect(() => {
-    if (!url || !enabled || sizeCache.has(url)) return
+    if (!url || !enabled || !canCheckSize(url) || sizeCache.has(url)) return
     const controller = new AbortController()
     fetch(url, { method: 'HEAD', signal: controller.signal })
       .then((res) => {
@@ -43,10 +45,11 @@ function useImageSize(url: string | null, enabled: boolean): number | null | und
  */
 export default function DataBudgetImage({ src, alt, square }: Props) {
   const url = resolveImageUrl(src)
-  const { isLoaded, recordLoad, usedKb, budgetKb } = useDataBudget()
+  const { isLoaded, recordLoad, usedKb, budgetKb, saver } = useDataBudget()
   const [shown, setShown] = useState(() => (url ? isLoaded(url) : false))
   const [failed, setFailed] = useState(false)
-  const sizeKb = useImageSize(url, !shown && navigator.onLine)
+  // Data saver skips even the tiny HEAD request for the size.
+  const sizeKb = useImageSize(url, !shown && navigator.onLine && !saver)
 
   if (!url) return null
   const frame = `budget-image${square ? ' budget-image--square' : ''}`
@@ -65,7 +68,7 @@ export default function DataBudgetImage({ src, alt, square }: Props) {
   return (
     <div className={`${frame} budget-image--placeholder`}>
       <span className="budget-image__size">
-        {sizeKb === undefined ? 'Checking size...' : sizeKb === null ? 'Size unknown' : formatKb(sizeKb)}
+        {sizeKb === undefined ? (saver ? 'Photo' : 'Checking size...') : sizeKb === null ? 'Size unknown' : formatKb(sizeKb)}
       </span>
       <span className="budget-image__hint">
         {failed ? "Couldn't load the photo." : overBudget ? 'Over your monthly image budget' : 'Photo hidden to save data'}

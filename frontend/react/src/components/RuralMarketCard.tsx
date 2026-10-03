@@ -1,61 +1,50 @@
 import { Link } from 'react-router-dom'
 import { useCommunities } from '../context/CommunityContext'
-import { timeAgo } from '../lib/geo'
-import { exchangeLabel, kindLabel, typeLabel, type Listing } from '../types'
-import Avatar from './Avatar'
+import { exchangeLabel, typeLabel, type Listing } from '../types'
 import DataBudgetImage from './DataBudgetImage'
+import Icon from './Icon'
 
 type Props = {
   listing: Listing
-  /** Replaces the default "Connect" footer action (e.g. Edit on your own listings). */
+  /** Replaces nothing on the card - adds an action row (e.g. Edit on your own listings). */
   actions?: React.ReactNode
   /** A short "why this matches" line, e.g. from the AI overview. */
   note?: string
+  /** Position in a staggered entrance (CSS computes the delay). */
+  index?: number
 }
 
 /**
- * Text-first listing card: type, offer/wanted and distance badges, title,
- * short description, exchange terms, an opt-in photo, and who posted it.
- * Everything except the photo arrives in the initial JSON.
+ * Four things only: the (opt-in) photo, the title, one line of terms, and
+ * how far away it is. Everything else is on the listing page.
  */
-export default function RuralMarketCard({ listing, actions, note }: Props) {
+export default function RuralMarketCard({ listing, actions, note, index }: Props) {
   const { describeDistance } = useCommunities()
   const distance = describeDistance(listing)
-  const terms = [exchangeLabel(listing.exchange), listing.price, listing.quantity].filter(Boolean).join(' · ')
+  const wanted = listing.kind === 'request'
+  // One line: what kind of thing, and on what terms.
+  const terms = [
+    wanted ? (listing.type === 'skill' ? 'Help wanted' : 'Wanted') : typeLabel(listing.type),
+    listing.price || exchangeLabel(listing.exchange),
+  ].join(' · ')
 
   return (
-    <article className={`market-card${listing.kind === 'request' ? ' market-card--request' : ''}`}>
-      <div className="market-card__badges">
-        <span className={`badge badge--${listing.type}`}>{typeLabel(listing.type)}</span>
-        <span className={`badge badge--kind-${listing.kind}`}>{kindLabel(listing)}</span>
-        <span className={`distance-badge distance-badge--${distance.tone}`}>{distance.text}</span>
-        {listing.status !== 'available' && <span className="badge badge--status">{listing.status}</span>}
-      </div>
-
-      <h3 className="market-card__title">
+    <article
+      className={`card${wanted ? ' card--wanted' : ''}`}
+      style={index !== undefined ? ({ '--i': index } as React.CSSProperties) : undefined}
+    >
+      {listing.image && <DataBudgetImage src={listing.image} alt={listing.title} />}
+      <h3 className="card__title">
         <Link to={`/listings/${encodeURIComponent(listing.id)}`}>{listing.title}</Link>
       </h3>
-
-      {note && <p className="market-card__note">{note}</p>}
-      {listing.description && <p className="market-card__desc">{listing.description}</p>}
-      {terms && <p className="market-card__price">{terms}</p>}
-
-      {listing.image && <DataBudgetImage src={listing.image} alt={listing.title} />}
-
-      <footer className="market-card__footer">
-        <Link to={`/users/${listing.owner.id}`} className="market-card__owner">
-          <Avatar name={listing.owner.name} size="sm" />
-          <span>
-            {listing.owner.name}
-            <span className="market-card__meta"> · {timeAgo(listing.created_at)}</span>
-          </span>
-        </Link>
-        {actions ?? (
-          <Link to={`/listings/${encodeURIComponent(listing.id)}#connect`} className="primary-button market-card__cta">
-            {listing.kind === 'request' ? 'I can help' : 'Connect'}
-          </Link>
-        )}
-      </footer>
+      <p className="card__terms">{terms}</p>
+      {note && <p className="card__note">{note}</p>}
+      <p className="card__distance">
+        <Icon name="pin" />
+        {distance.text}
+        {listing.status !== 'available' && <span className="card__status"> · {listing.status}</span>}
+      </p>
+      {actions && <div className="card__actions">{actions}</div>}
     </article>
   )
 }

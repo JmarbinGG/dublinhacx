@@ -7,6 +7,7 @@ import { useAiOverview } from '../hooks/useAiOverview'
 import { useOnline } from '../hooks/useOnline'
 import { timeAgo } from '../lib/geo'
 import type { Listing } from '../types'
+import Icon from './Icon'
 import RuralMarketCard from './RuralMarketCard'
 
 type Props = {
@@ -35,6 +36,7 @@ export default function AiOverview({ q, filters, known, onClose }: Props) {
     known,
   )
   const [coolingDown, setCoolingDown] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
   const counted = useRef<object | null>(null)
 
   // Meter each fresh answer once (cached copies cost nothing).
@@ -54,18 +56,30 @@ export default function AiOverview({ q, filters, known, onClose }: Props) {
   return (
     <section className="ai-card" aria-labelledby="ai-overview-title" aria-live="polite">
       <header className="ai-card__header">
-        <h2 id="ai-overview-title">
-          AI overview <span className="ai-card__query">"{q}"</span>
-        </h2>
-        <button type="button" className="link-button" onClick={onClose} aria-label="Close AI overview">
-          Close
-        </button>
+        <h2 id="ai-overview-title">Overview of "{q}"</h2>
+        <div className="ai-card__tools">
+          <button
+            type="button"
+            className="link-button"
+            aria-expanded={!collapsed}
+            aria-controls="ai-overview-body"
+            onClick={() => setCollapsed(!collapsed)}
+          >
+            {collapsed ? 'Show' : 'Hide'}
+          </button>
+          <button type="button" className="icon-button" onClick={onClose} aria-label="Close overview">
+            <Icon name="x" />
+          </button>
+        </div>
       </header>
       <p className="ai-card__label">
         AI-generated, may be wrong · about {AI_ANSWER_KB} KB
-        {overview?.demo && <span className="badge badge--demo">Demo</span>}
+        {overview?.demo && ' · demo answer, AI not connected yet'}
         {cachedAt && <> · saved {timeAgo(new Date(cachedAt).toISOString())}</>}
       </p>
+
+      {!collapsed && (
+      <div id="ai-overview-body" className="ai-card__body">
 
       {loading && (
         <div className="ai-card__loading" role="status">
@@ -108,6 +122,8 @@ export default function AiOverview({ q, filters, known, onClose }: Props) {
             Ask again
           </button>
         </>
+      )}
+      </div>
       )}
     </section>
   )

@@ -50,8 +50,6 @@ function readStored(): Stored {
 }
 
 type AssistantValue = {
-  open: boolean
-  setOpen: (open: boolean) => void
   messages: ChatMessage[]
   pending: boolean
   /** A message typed while offline, waiting for the user to press "Send now". */
@@ -73,7 +71,6 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
   const { token } = useAuth()
   const { home } = useCommunities()
   const { recordAi } = useDataBudget()
-  const [open, setOpen] = useState(false)
   const [stored, setStored] = useState<Stored>(readStored)
   const [pending, setPending] = useState(false)
   const [failedTurns, setFailedTurns] = useState(0)
@@ -143,8 +140,6 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
     }
 
     return {
-      open,
-      setOpen,
       messages: stored.messages,
       pending,
       unsent: stored.unsent,
@@ -170,7 +165,7 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
       },
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, stored, pending, failedTurns, coolingDown, token, home, recordAi])
+  }, [stored, pending, failedTurns, coolingDown, token, home, recordAi])
 
   return <AssistantContext.Provider value={value}>{children}</AssistantContext.Provider>
 }

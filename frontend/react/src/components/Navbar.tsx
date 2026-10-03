@@ -1,62 +1,58 @@
-import { Link, NavLink, useNavigate } from 'react-router-dom'
-import { useAuth } from '../auth/AuthContext'
-import DataMeter from './DataMeter'
+import { Link, useLocation } from 'react-router-dom'
+import AvatarMenu from './AvatarMenu'
+import Icon from './Icon'
+import SearchBar from './SearchBar'
 
-/** Inline banyan mark + name - a few hundred bytes, no image download. */
-export function Wordmark() {
+/**
+ * Banyan mark: a canopy, a trunk and four aerial roots, hand-drawn as SVG
+ * strokes (well under 1 KB). `pathLength=1` lets CSS draw it on with
+ * stroke-dashoffset on the landing page - no measuring needed.
+ */
+export function Logo({ draw = false }: { draw?: boolean }) {
+  return (
+    <svg className={`logo-mark${draw ? ' logo-mark--draw' : ''}`} viewBox="0 0 32 32" aria-hidden="true">
+      <path pathLength={1} d="M3.5 13C4 7 9.5 3.5 16 3.5S28 7 28.5 13" />
+      <path pathLength={1} d="M3.5 13h25" />
+      <path pathLength={1} d="M16 13v15.5" />
+      <path pathLength={1} d="M8.5 13c.6 5 .2 10.5 0 15.5M23.5 13c-.6 5-.2 10.5 0 15.5" />
+      <path pathLength={1} d="M12 13v8M20 13v9" />
+      <path pathLength={1} d="M5 28.5h22" />
+    </svg>
+  )
+}
+
+export function Wordmark({ draw = false }: { draw?: boolean }) {
   return (
     <span className="wordmark">
-      <svg className="wordmark__tree" viewBox="0 0 32 32" aria-hidden="true">
-        <path
-          d="M16 3c-6 0-11 3.6-11 8.2 0 3.3 2.6 5.4 6 6.3V28h2.4v-8.5h1.4V28h2.4v-8.5h1.4V28H21V17.5c3.4-.9 6-3 6-6.3C27 6.6 22 3 16 3z"
-          fill="currentColor"
-        />
-      </svg>
+      <Logo draw={draw} />
       Banyan
     </span>
   )
 }
 
-/** Top navigation. Shows Sign In / Sign Up, or the signed-in user. */
+/** Top bar: logo, search (with inline Ask AI), Post, and the avatar menu. */
 export default function Navbar() {
-  const { user, logout } = useAuth()
-  const navigate = useNavigate()
-
-  function handleSignOut() {
-    logout()
-    navigate('/app')
-  }
+  const { pathname, search } = useLocation()
+  // Home has its own large search box; don't show two.
+  const showSearch = pathname !== '/app'
+  const query = pathname === '/search' ? (new URLSearchParams(search).get('q') ?? '') : ''
 
   return (
-    <header className="navbar">
-      <div className="navbar-inner">
-        <Link to="/app" className="logo" aria-label="Banyan home">
+    <header className="topbar">
+      <div className="topbar__inner">
+        <Link to="/app" className="topbar__logo" aria-label="Banyan home">
           <Wordmark />
         </Link>
-
-        <nav className="nav-links" aria-label="Main">
-          <NavLink to="/search">Browse</NavLink>
-          <NavLink to="/communities">Towns</NavLink>
-          <DataMeter />
-          {user ? (
-            <>
-              <NavLink to={`/users/${user.id}`}>My profile</NavLink>
-              <Link to="/listings/new" className="primary-button">
-                + Share
-              </Link>
-              <button type="button" className="link-button" onClick={handleSignOut}>
-                Sign out
-              </button>
-            </>
-          ) : (
-            <>
-              <NavLink to="/signin">Sign in</NavLink>
-              <Link to="/signup" className="primary-button">
-                Join
-              </Link>
-            </>
-          )}
-        </nav>
+        {showSearch && (
+          <div className="topbar__search">
+            <SearchBar key={query} initialQuery={query} />
+          </div>
+        )}
+        <Link to="/listings/new" className="primary-button topbar__post" aria-label="Post a listing">
+          <Icon name="plus" />
+          <span>Post</span>
+        </Link>
+        <AvatarMenu key={pathname} />
       </div>
     </header>
   )

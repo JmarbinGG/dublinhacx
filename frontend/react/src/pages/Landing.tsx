@@ -1,29 +1,40 @@
 import { Link } from 'react-router-dom'
 import { Wordmark } from '../components/Navbar'
+import { ROOTS } from '../generated/art'
 
-/** Marketing splash page - separate from the app (no navbar/footer/chat). */
+/** Splash page - separate from the app (no top bar, footer or assistant). */
 export default function Landing() {
   return (
     <div className="landing">
-      <Link to="/app" className="landing-logo" aria-label="Banyan home">
-        <Wordmark />
-      </Link>
+      <header className="landing__top">
+        <Link to="/app" aria-label="Banyan home">
+          <Wordmark draw />
+        </Link>
+        <Link to="/signin">Sign in</Link>
+      </header>
 
-      <div className="landing-hero">
+      <main className="landing__body">
         <h1>Share what you have. Find what you need.</h1>
         <p>
-          The banyan is where the village meets - and its branches drop roots that grow into new trunks. Banyan
-          connects neighbours and nearby towns to share spare materials, idle equipment, and the skills to get work
-          done.
+          A pump set sitting idle, a roll of drip pipe left over, someone who can fix a tractor or stitch a blouse.
+          Banyan helps them reach the neighbour, or the next town over, that needs them.
         </p>
-        <Link to="/app" className="primary-button landing-cta">
-          Get started &rarr;
-        </Link>
-        <Link to="/signin" className="landing-signin">
-          Already a member? Sign in
-        </Link>
-        <p className="landing-note">Made for slow, capped connections: text first, photos only when you tap.</p>
-      </div>
+        <div className="landing__actions">
+          <Link to="/app" className="primary-button">
+            See what's shared nearby
+          </Link>
+          <Link to="/signup" className="secondary-button">
+            Join
+          </Link>
+        </div>
+        <p className="hint">Made for slow connections: text first, photos only when you tap.</p>
+      </main>
+
+      {/* The banyan's aerial roots: a parametric curve family computed at
+          build time (scripts/design.mjs) - one static path, under 1 KB. */}
+      <svg className="landing__roots" viewBox={`0 -8 ${ROOTS.width} ${ROOTS.height + 8}`} aria-hidden="true" preserveAspectRatio="none">
+        <path d={ROOTS.d} />
+      </svg>
     </div>
   )
 }
