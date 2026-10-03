@@ -12,7 +12,7 @@ from routers import listings, search, uploads, users
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Community exchange API")
+app = FastAPI(title="Banyan API", description="Share what you have. Find what you need.")
 
 app.add_middleware(
     CORSMiddleware,
