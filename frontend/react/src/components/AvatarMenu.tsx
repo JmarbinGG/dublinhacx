@@ -5,6 +5,7 @@ import { formatKb, useDataBudget } from '../context/DataBudgetContext'
 import { applyTheme, readTheme, type ThemeChoice } from '../lib/theme'
 import Avatar from './Avatar'
 import Icon from './Icon'
+import MorphIcon from './MorphIcon'
 
 const THEMES: { id: ThemeChoice; label: string }[] = [
   { id: 'system', label: 'Auto' },
@@ -51,7 +52,7 @@ export default function AvatarMenu() {
         aria-label={user ? `Account menu for ${user.name}` : 'Menu'}
         onClick={() => setOpen(!open)}
       >
-        {user ? <Avatar name={user.name} size="sm" /> : <Icon name="user" />}
+        {user ? <Avatar name={user.name} size="sm" /> : <MorphIcon name="menuClose" on={open} />}
       </button>
 
       {open && (
@@ -87,6 +88,11 @@ export default function AvatarMenu() {
           </Link>
 
           <div className="menu__theme" role="group" aria-label="Theme">
+            {/* Sun morphs into moon with the theme. */}
+            <MorphIcon
+              name="theme"
+              on={theme === 'dark' || (theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)}
+            />
             {THEMES.map((t) => (
               <button
                 key={t.id}

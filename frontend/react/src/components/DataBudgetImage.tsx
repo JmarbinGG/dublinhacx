@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { canCheckSize, resolveImageUrl } from '../api/client'
 import { formatKb, useDataBudget } from '../context/DataBudgetContext'
+import Icon, { type IconName } from './Icon'
 
 type Props = {
   src: string | null | undefined
@@ -9,6 +10,9 @@ type Props = {
   square?: boolean
   /** Size from the API (image_size_kb). When known, no HEAD request is made. */
   knownSizeKb?: number | null
+  /** Compact card slot: a neutral tile with this icon and the size. Same
+   * height loaded or not; left out entirely in data saver mode. */
+  tileIcon?: IconName
 }
 
 // The API doesn't send image sizes, so ask the server with a HEAD request
@@ -45,7 +49,7 @@ function useImageSize(url: string | null, enabled: boolean): number | null | und
  * loaded it stays visible for the rest of the session. Images from hosts we
  * don't trust are never shown.
  */
-export default function DataBudgetImage({ src, alt, square, knownSizeKb }: Props) {
+export default function DataBudgetImage({ src, alt, square, knownSizeKb, tileIcon }: Props) {
   const url = resolveImageUrl(src)
   const { isLoaded, recordLoad, usedKb, budgetKb, saver } = useDataBudget()
   const [shown, setShown] = useState(() => (url ? isLoaded(url) : false))
@@ -54,7 +58,7 @@ export default function DataBudgetImage({ src, alt, square, knownSizeKb }: Props
   const checkedKb = useImageSize(url, knownSizeKb == null && !shown && navigator.onLine && !saver)
   const sizeKb = knownSizeKb ?? checkedKb
 
-  if (!url) return null
+  if (!url || (tileIcon && saver && !shown)) return null
   const frame = `budget-image${square ? ' budget-image--square' : ''}`
 
   if (shown && !failed) {
@@ -67,6 +71,27 @@ export default function DataBudgetImage({ src, alt, square, knownSizeKb }: Props
 
   const cost = sizeKb ?? 60 // unknown size: count a typical small photo
   const overBudget = usedKb + cost > budgetKb
+  const load = () => {
+    setFailed(false)
+    recordLoad(url, cost)
+    setShown(true)
+  }
+
+  if (tileIcon) {
+    const size = sizeKb ? formatKb(sizeKb) : 'Photo'
+    return (
+      <button
+        type="button"
+        className={`${frame} photo-tile`}
+        onClick={load}
+        aria-label={`Load photo${sizeKb ? `, ${size}` : ''}${overBudget ? ', over your monthly budget' : ''}`}
+      >
+        <Icon name={failed ? 'alert' : tileIcon} />
+        <span>{failed ? 'Try again' : size}</span>
+        {overBudget && !failed && <span className="photo-tile__warn">over budget</span>}
+      </button>
+    )
+  }
 
   return (
     <div className={`${frame} budget-image--placeholder`}>
@@ -79,11 +104,7 @@ export default function DataBudgetImage({ src, alt, square, knownSizeKb }: Props
       <button
         type="button"
         className="secondary-button budget-image__button"
-        onClick={() => {
-          setFailed(false)
-          recordLoad(url, cost)
-          setShown(true)
-        }}
+        onClick={load}
       >
         {failed ? 'Try again' : overBudget ? 'Load anyway' : 'Load image'}
       </button>

@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { QUERY_LIMIT, cleanQuery } from '../lib/text'
-import Icon from './Icon'
+import { cancelSearch, useSearchBusy } from '../lib/searchActivity'
+import MorphIcon from './MorphIcon'
 
 type Props = {
   /** Pre-fill the input. Callers pass key={query} so back/forward re-syncs it. */
@@ -18,6 +19,7 @@ export default function SearchBar({ initialQuery = '', size = 'bar' }: Props) {
   const [value, setValue] = useState(initialQuery)
   const navigate = useNavigate()
   const location = useLocation()
+  const busy = useSearchBusy()
 
   function go() {
     const query = cleanQuery(value)
@@ -41,7 +43,18 @@ export default function SearchBar({ initialQuery = '', size = 'bar' }: Props) {
         go()
       }}
     >
-      <Icon name="search" />
+      {/* Search icon morphs into Cancel while a search request runs. */}
+      {/* One element either way, so the icon can morph rather than swap. */}
+      <button
+        type="button"
+        className="search__lead"
+        onClick={busy ? cancelSearch : undefined}
+        tabIndex={busy ? 0 : -1}
+        aria-hidden={!busy}
+        aria-label={busy ? 'Cancel search' : undefined}
+      >
+        <MorphIcon name="searchCancel" on={busy} />
+      </button>
       <input
         type="search"
         value={value}

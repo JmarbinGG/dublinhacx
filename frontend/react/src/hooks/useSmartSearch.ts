@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { isAbort } from '../api/client'
 import { plainFallback, smartStep, type SearchState, type SmartResult } from '../api/smartSearch'
+import { setSearchBusy } from '../lib/searchActivity'
 import type { Listing } from '../types'
 
 export type SmartInput = {
@@ -60,6 +61,11 @@ export function useSmartSearch(input: SmartInput | null, token: string | null) {
     const signal = controller.signal
     const req = JSON.parse(key) as SmartInput
     setState((prev) => ({ ...prev, loading: true, error: null, cancelled: false }))
+    // Lets the top bar's search icon act as Cancel while this runs.
+    setSearchBusy(() => {
+      controller.abort()
+      setState((prev) => ({ ...prev, loading: false, loadingMore: false, cancelled: true }))
+    })
 
     ;(async () => {
       const community = req.community
@@ -81,8 +87,13 @@ export function useSmartSearch(input: SmartInput | null, token: string | null) {
         if (isAbort(error) || signal.aborted) return
         setState({ ...IDLE, error: error instanceof Error ? error.message : 'Search failed.' })
       })
+      // Only the newest search may clear the busy flag.
+      .finally(() => controllerRef.current === controller && setSearchBusy(null))
 
-    return () => controller.abort()
+    return () => {
+      controller.abort()
+      setSearchBusy(null)
+    }
   }, [key, token, attempt])
 
   const loadMore = useCallback(() => {
