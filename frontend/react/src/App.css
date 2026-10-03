@@ -725,6 +725,7 @@
 }
 
 .card {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -735,9 +736,13 @@
   transition: transform 150ms var(--ease-out), border-color 150ms var(--ease-out);
 }
 
-.card:hover {
-  transform: translateY(-2px);
-  border-color: var(--line-strong);
+/* Only where hover is real - on touch screens a tap left the card stuck
+   "lifted", which read as a highlight with no navigation. */
+@media (hover: hover) {
+  .card:hover {
+    transform: translateY(-2px);
+    border-color: var(--line-strong);
+  }
 }
 
 /* "Wanted" is said in words on the card; the left rule is only a second cue. */
@@ -754,6 +759,23 @@
 .card__title a {
   color: var(--text);
   text-decoration: none;
+}
+
+/* The whole card is the tap target, not just the title: the title link
+   stretches over the card. */
+.card__title a::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+/* Controls inside the card (tap-to-load photo, Edit, ...) sit above the
+   stretched link so they still get their own taps. */
+.card button,
+.card__actions {
+  position: relative;
+  z-index: 1;
 }
 
 .card__title a:hover {
