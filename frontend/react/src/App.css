@@ -1771,10 +1771,15 @@ textarea {
   line-height: 1.32;
 }
 
-/* All versions occupy one grid cell: the cell is as tall as the tallest
+/* All versions occupy one grid cell: the cell is as big as the biggest
    (Spanish, or Hindi with its taller glyphs) at every width - so swapping
-   languages can never shift the layout. */
+   languages can never shift the layout. Inline for buttons and links,
+   block for the headline and paragraphs. */
 .scramble__stack {
+  display: inline-grid;
+}
+
+.scramble__stack--block {
   display: grid;
 }
 
