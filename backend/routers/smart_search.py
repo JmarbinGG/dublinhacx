@@ -239,9 +239,10 @@ def unique_terms(terms: list[str]) -> list[str]:
 
 
 # Endings a listing word may add to a search stem and still count as the
-# same word: weld -> welding/welder, tire -> tires. Anything longer is a
-# different word (wheel -/-> wheelbarrow, rim -/-> trimming).
-WORD_ENDINGS = {"", "s", "es", "e", "ed", "er", "ers", "ing", "ings"}
+# same word: weld -> welding/welder, tire -> tires. Anything else is a
+# different word (wheel -/-> wheelbarrow, rim -/-> trimming, car -/-> care).
+WORD_ENDINGS = {"", "s", "ed", "er", "ers", "ing", "ings"}
+ES_AFTER = ("s", "x", "z", "ch", "sh", "o")  # box -> boxes, potato -> potatoes
 # Spelling variants that should find each other.
 VARIANTS = {
     "tire": "tyre", "tyre": "tire", "plow": "plough", "plough": "plow", "color": "colour",
@@ -259,9 +260,18 @@ def words_of(text: str) -> list[str]:
     return re.findall(r"[a-z0-9]+", (text or "").lower())
 
 
+def _same_word(stem_: str, token: str) -> bool:
+    if not token.startswith(stem_):
+        return False
+    ending = token[len(stem_):]
+    return (ending in WORD_ENDINGS
+            or (ending == "es" and stem_.endswith(ES_AFTER))
+            or (ending in ("d", "r", "rs") and stem_.endswith("e")))  # use -> used, bike -> biker
+
+
 def word_hit(w: str, tokens: list[str]) -> bool:
     """Does any listing word count as the search word `w` (a stem)?"""
-    return any(t.startswith(f) and t[len(f):] in WORD_ENDINGS for f in word_forms(w) for t in tokens)
+    return any(_same_word(f, t) for f in word_forms(w) for t in tokens)
 
 
 def looks_simple(q: str) -> bool:
