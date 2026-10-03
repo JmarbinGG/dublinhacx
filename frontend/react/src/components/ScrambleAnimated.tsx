@@ -3,9 +3,9 @@ import { useScramble } from 'use-scramble'
 import { LANDING_COPY, type CopyKey, type ScrambleLang } from '../lib/landingCopy'
 
 /**
- * One conductor for every scrambling string on the landing page. Each
+ * One conductor for every changing string on the landing page. Each
  * language change cascades top to bottom, one text box at a time: the next
- * box starts only when the previous one has finished scrambling.
+ * box starts only when the previous one has finished swapping.
  *
  *   2 s:   Sign in -> headline -> paragraph -> Get started -> Join -> hint  (Spanish)
  *   hold 2 s, then the same cascade into Hindi
@@ -91,14 +91,9 @@ function useConductor(k: CopyKey): ScrambleLang {
   )
 }
 
-// Scramble glyphs from the target script only: letters (no #%&@ -
-// anti-ai-slop-audit) for English/Spanish, Devanagari consonants for Hindi.
-const LATIN = [...Array(26)].flatMap((_, i) => [65 + i, 97 + i]) as [number, number]
-const DEVANAGARI: [number, number] = [2325, 2361] // क .. ह
-const IGNORE = [' ', '.', ',', ':', '।', '¿', '?']
-
-// Overflow mode leaves the previous language's characters in place until
-// the scramble reaches them. A Hindi vowel sign left after a Latin letter
+// No random glyphs: overflow mode leaves the previous language's
+// characters in place and a cursor sweeps left to right, swapping each one
+// for the next language's character. A Hindi vowel sign left after a Latin letter
 // would render as a broken dotted circle, so strip any combining mark that
 // has no Devanagari letter before it. (Mixed scripts mid-change are the
 // intended overflow look; broken marks are not.)
@@ -108,8 +103,8 @@ export default function ScrambleAnimated({ k }: { k: CopyKey }) {
   const current = useConductor(k)
   const text = LANDING_COPY[k][current]
   const running = useRef(false)
-  // Slow and deliberate: ~30 fps ticks, each character scrambles for a
-  // while; longer strings step a little faster so no box drags on.
+  // ~60 fps ticks, one character per tick; longer strings swap a few
+  // characters per tick so no box drags on.
   const step = Math.max(1, Math.ceil(LANDING_COPY[k].es.length / 60))
 
   const { ref } = useScramble({
@@ -117,13 +112,11 @@ export default function ScrambleAnimated({ k }: { k: CopyKey }) {
     playOnMount: false,
     overflow: true,
     overdrive: false,
-    speed: 0.5,
+    speed: 1,
     tick: 1,
     step,
-    seed: 1,
-    scramble: 8,
-    range: current === 'hi' ? DEVANAGARI : LATIN,
-    ignore: IGNORE,
+    seed: 0, // nothing random ahead of the cursor
+    scramble: 0, // each character swaps straight to its new one
     onAnimationFrame: (result) => {
       if (result !== text) running.current = true
       const fixed = result.replace(ORPHAN_MARKS, '$1')
