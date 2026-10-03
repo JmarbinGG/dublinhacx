@@ -205,12 +205,16 @@ _COMPLEX_RE = re.compile(
 
 
 def stem(word: str) -> str:
-    """Cheap singular: screws -> screw, boxes -> box. Matching is substring,
-    so the singular still finds the plural in listings."""
+    """Cheap stem: screws -> screw, boxes -> box, welder/welding -> weld.
+    Matching is substring, so the stem still finds every longer form."""
     if len(word) > 4 and word.endswith("es") and word[-3] in "sxz":
         return word[:-2]
     if len(word) > 3 and word.endswith("s") and not word.endswith("ss"):
-        return word[:-1]
+        word = word[:-1]
+    if len(word) > 6 and word.endswith("ing"):
+        return word[:-3]
+    if len(word) > 5 and word.endswith("er") and not word.endswith("eer"):
+        return word[:-2]
     return word
 
 
@@ -355,8 +359,10 @@ The shopper described a goal. Work out what they need and what to search for.
 Return only JSON: {"need": "<what they're trying to do, under 60 characters>", \
 "terms": [up to 6 specific things or skills to search for, most useful first, \
 1-2 words each, singular]}
-Include both tools and the skill/person who could do it when that makes sense \
-(e.g. cutting down a tree: "axe", "chainsaw", "bow saw", "rope", "tree felling").
+Include hand tools, machinery that could be borrowed or hired (tractor, excavator, \
+pump...) and the skill/person who could do it, when those make sense \
+(e.g. cutting down a tree: "axe", "chainsaw", "bow saw", "rope", "tree felling"; \
+digging a pond: "excavator", "jcb", "shovel", "pond liner", "digging").
 Only list things that directly help with the goal.
 
 """ + SAFETY_RULES
