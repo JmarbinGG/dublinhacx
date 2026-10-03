@@ -40,6 +40,13 @@ const PALETTE = {
     'warn-soft': [0.97, 0.03, 80],
     danger: [0.501, 0.178, 28.7],
     'danger-soft': [0.965, 0.02, 25],
+    // Banyan illustration (decorative, flat): three canopy greens back to
+    // front, the ground patch, and a warm taupe trunk.
+    'tree-deep': [0.43, 0.075, 152],
+    'tree-mid': [0.55, 0.095, 146],
+    'tree-light': [0.68, 0.1, 140],
+    'tree-ground': [0.86, 0.06, 135],
+    'tree-trunk': [0.52, 0.035, 60],
   },
   dark: {
     bg: [0.195, 0.009, 153.1],
@@ -57,6 +64,11 @@ const PALETTE = {
     'warn-soft': [0.28, 0.04, 75],
     danger: [0.834, 0.068, 22],
     'danger-soft': [0.28, 0.04, 22],
+    'tree-deep': [0.33, 0.06, 152],
+    'tree-mid': [0.43, 0.08, 148],
+    'tree-light': [0.55, 0.09, 144],
+    'tree-ground': [0.29, 0.045, 140],
+    'tree-trunk': [0.55, 0.03, 60],
   },
 }
 
@@ -166,108 +178,185 @@ const rotate = ([x, y], a) => [x * Math.cos(a) - y * Math.sin(a), x * Math.sin(a
 const r1 = (n) => Math.round(n * 10) / 10
 
 /**
- * Recursive banyan: wide, low limbs that keep splitting; leaf clusters on
- * the tips; aerial roots dropping from the wide limbs to the ground.
- * Every path gets a start time (ms) and duration baked in, so the browser
- * just plays them: trunk 0-1.2 s, limbs 1.2-3 s by depth, leaves 3-4.2 s
- * by distance from the trunk, roots 4.2-6 s.
+ * Stylized banyan in a 400 x 300 box: a wide lumpy dome canopy (~75% of
+ * the height), a twisted multi-strand trunk (~12% of the width) flaring
+ * into buttress roots, limbs curving up into the canopy, many thin aerial
+ * roots, and a grassy ground patch.
  *
- * Output rows: [kind, d, width, start, duration]
- *   kind 0 = wood (stroke), 1 = leaf cluster (circle "cx cy r"),
- *   2 = aerial root (stroke; thickens into a pillar via a transform once
- *       it reaches the ground)
+ * Timing: ONE clock. Everything is scheduled in "growth units" at a
+ * constant speed (a stroke's duration is proportional to its length; a
+ * child starts where its parent reaches it), then the whole timeline is
+ * passed through a single ease-out, so per-element animations run linear
+ * and the tree grows in one continuous motion over TOTAL ms.
  */
-function banyan(seed = 7) {
+function banyan(seed = 11) {
   const rand = rng(seed)
-  const GROUND = 240
-  const out = []
-  const limbs = [] // [x0, y0, cx, cy, x1, y1, depth] for root drops
+  const TOTAL = 4000
+  const W = 400
+  const GY = 284 // ground line
+  const CX = 200
+  const r0 = (n) => Math.round(n)
+
+  // Global ease-out: clock progress P = 1 - (1 - t)^2. An element scheduled
+  // at linear progress p starts at real time t = 1 - sqrt(1 - p).
+  const at = (p) => r0(TOTAL * (1 - Math.sqrt(1 - Math.min(1, Math.max(0, p)))))
+  // Spans are recorded in raw growth units first; at the end they're
+  // normalised so the last element finishes exactly at p = 1.
+  const spans = []
+  const span = (p0, p1) => {
+    const s = [p0, p1]
+    spans.push(s)
+    return s
+  }
+  const SPEED = 1 / 900 // growth units per px of length (constant speed)
+
+  // Ground patch: ~85% of canopy width, spreads from its centre first.
+  const ground = { e: [CX, GY, 170, 11], a: span(0, 0.07) }
+  let grass = ''
+  for (let i = 0; i < 9; i++) {
+    const x = r0(CX - 150 + rand() * 300)
+    grass += `M${x} ${GY - 2}l${r0(rand() * 4 - 2)} -${r0(4 + rand() * 4)}`
+  }
+  ground.g = grass
+
+  // Trunk: six strands rising together; they cross (twist) and narrow in
+  // the middle, flare at the base. Total width ~48 px = 12%.
+  const TOP = 196
+  const strands = []
+  let trunkEnd = 0
+  for (let i = 0; i < 6; i++) {
+    const k = i - 2.5
+    const bx = CX + k * 10 // base, flared
+    const mx = CX - k * 3.5 // middle, crossed and narrow
+    const tx = CX + k * 7 // top, spreading into the limbs
+    const d = `M${r0(bx)} ${GY}C${r0(bx + k)} ${GY - 22} ${r0(mx)} ${GY - 40} ${r0(mx)} ${GY - 50}S${r0(tx - k * 2)} ${TOP + 18} ${r0(tx)} ${TOP}`
+    const len = GY - TOP + 12
+    const p0 = 0.04
+    const p1 = p0 + len * SPEED
+    trunkEnd = Math.max(trunkEnd, p1)
+    strands.push([d, 8, span(p0, p1)])
+  }
+
+  // Buttress roots fan out along the ground as the trunk finishes.
+  let buttress = ''
+  for (let i = 0; i < 8; i++) {
+    const side = i < 4 ? -1 : 1
+    const j = i % 4
+    const x0 = CX + side * (8 + j * 5)
+    const x1 = CX + side * (34 + j * 14 + rand() * 8)
+    buttress += `M${r0(x0)} ${GY - 14 + j * 3}Q${r0((x0 + x1) / 2)} ${GY - 2} ${r0(x1)} ${GY + 2}`
+  }
+  const buttressA = span(trunkEnd - 0.06, trunkEnd + 0.06)
+
+  // Limbs: from the upper-middle trunk, up and out under the canopy.
+  // Each starts where the growing trunk reaches its attach height.
+  const limbs = []
   const tips = []
-
-  // Trunk: three stacked segments, each thinner - the taper.
-  const base = [200, GROUND]
-  const top = [200, 150]
-  const seg = [[GROUND, 205, 12], [205, 175, 9.5], [175, 150, 7.5]]
-  seg.forEach(([y0, y1, w], i) => out.push([0, `M200 ${y0}Q${r1(199 + rand() * 2)} ${r1((y0 + y1) / 2)} 200 ${y1}`, w, i * 400, 400]))
-
-  // Branch: direction vector `dir`, rotated per child, length shrinks by
-  // a factor each level; width shrinks with depth.
-  function branch(from, dir, len, width, depth, order) {
-    const to = [from[0] + dir[0] * len, from[1] + dir[1] * len]
-    // Quadratic control point: halfway along, pushed sideways a little
-    // (the perpendicular [-dy, dx]) for an organic bend.
-    const bend = (rand() - 0.5) * len * 0.35
-    const c = [from[0] + (dir[0] * len) / 2 - dir[1] * bend, from[1] + (dir[1] * len) / 2 + dir[0] * bend - len * 0.06]
-    const start = 1200 + (depth - 1) * 600 + order * 20
-    out.push([0, `M${r1(from[0])} ${r1(from[1])}Q${r1(c[0])} ${r1(c[1])} ${r1(to[0])} ${r1(to[1])}`, r1(width), start, 600])
-    if (depth <= 2) limbs.push([...from, ...c, ...to, depth])
-    if (depth === 3) {
-      tips.push(to)
-      return
-    }
-    const kids = 2
-    for (let k = 0; k < kids; k++) {
-      // Banyans spread wide: children fan sideways and slightly up.
-      const spread = (k - (kids - 1) / 2) * (0.55 + rand() * 0.35)
-      let d = rotate(dir, spread + (rand() - 0.5) * 0.25)
-      // Pull deep branches toward horizontal (a broad, flat canopy).
-      if (depth >= 2) d = [d[0], d[1] * 0.75 - 0.05]
-      const n = Math.hypot(d[0], d[1])
-      branch(to, [d[0] / n, d[1] / n], len * (0.72 + rand() * 0.12), width * 0.62, depth + 1, order * 2 + k)
-    }
-  }
-
-  // Four main limbs: two low and wide, two higher.
-  const mains = [[-1.32, 82], [-0.62, 66], [0.62, 66], [1.32, 82]]
-  mains.forEach(([angle, len], i) => branch(top, rotate([0, -1], angle), len, 6, 1, i))
-
-  // Leaf clusters on every tip; delay grows with distance from the trunk.
-  const maxD = Math.max(...tips.map(([x, y]) => Math.hypot(x - 200, y - 150)))
-  for (const [x, y] of tips) {
-    const dist = Math.hypot(x - 200, y - 150)
-    out.push([1, `${r1(x)} ${r1(y)} ${r1(18 + rand() * 9)}`, 0, Math.round(3000 + (dist / maxD) * 900), 300])
-  }
-
-  // Aerial roots: from points along the wide limbs, falling to the ground.
-  // A small sway decays toward the ground and a gravity pull bends the
-  // curve's control points downward - the same idea as the old roots strip.
-  const drops = limbs
-    .filter(([x0, , , , x1, , depth]) => depth === 2 || Math.abs(x1 - x0) > 40)
-    .map(([x0, y0, cx, cy, x1, y1]) => {
-      const t = 0.55 + rand() * 0.35 // point on the quadratic B(t)
-      const u = 1 - t
-      return [u * u * x0 + 2 * u * t * cx + t * t * x1, u * u * y0 + 2 * u * t * cy + t * t * y1]
-    })
-    .filter(([x]) => Math.abs(x - 200) > 30)
-    .sort((a, b) => Math.abs(a[0] - 200) - Math.abs(b[0] - 200))
-    .slice(0, 8)
-  drops.forEach(([x, y], i) => {
-    const fall = GROUND - y
-    const sway = (rand() - 0.5) * 10
-    const d = `M${r1(x)} ${r1(y)}C${r1(x + sway)} ${r1(y + fall * 0.35)} ${r1(x - sway * 0.5)} ${r1(y + fall * 0.75)} ${r1(x + sway * 0.2)} ${GROUND}`
-    out.push([2, d, 1.3, 4200 + i * 90, 900])
+  const limbDefs = [[-1, 128, 96], [-1, 82, 74], [1, 82, 74], [1, 128, 96], [0.15, 26, 64]]
+  limbDefs.forEach(([side, reach, rise], i) => {
+    const ay = GY - 58 - (i % 2) * 10 // attach height
+    const ax = CX + side * 6
+    const ex = CX + side * reach
+    const ey = ay - rise
+    const d = `M${r0(ax)} ${r0(ay)}Q${r0(CX + side * reach * 0.35)} ${r0(ay - rise * 0.15)} ${r0(ex)} ${r0(ey)}`
+    const len = Math.hypot(ex - ax, ey - ay) * 1.1
+    const p0 = 0.04 + ((GY - ay) / (GY - TOP + 12)) * (trunkEnd - 0.04)
+    const p1 = p0 + len * SPEED
+    limbs.push([d, 7, span(p0, p1)])
+    tips.push([ex, ey, p1])
   })
 
-  // Ground line.
-  out.push([0, `M60 ${GROUND}H340`, 1, 0, 600])
-
-  // Tight viewBox from every coordinate (+ leaf radii), so the reserved
-  // aspect-ratio box holds the whole tree and nothing spills onto text.
-  let [minX, minY, maxX, maxY] = [Infinity, Infinity, -Infinity, -Infinity]
-  for (const [kind, d] of out) {
-    const nums = d.match(/-?\d+(\.\d+)?/g).map(Number)
-    const pad = kind === 1 ? nums[2] : 6
-    const pts = kind === 1 ? [[nums[0], nums[1]]] : nums.reduce((acc, n, i) => (i % 2 ? acc[acc.length - 1].push(n) : acc.push([n]), acc), [])
-    for (const [x, y] of pts) {
-      if (y === undefined) continue
-      minX = Math.min(minX, x - pad)
-      maxX = Math.max(maxX, x + pad)
-      minY = Math.min(minY, y - pad)
-      maxY = Math.max(maxY, y + pad)
-    }
+  // Canopy: ~140 overlapping circles inside a half-ellipse dome with a
+  // wobbled outline. Bigger blobs in the middle, smaller at the edge.
+  // Three tones, drawn back (deep) to front (light).
+  const DOME = { cx: CX, cy: 206, rx: 196, ry: 196 }
+  const wobble = (th) => 1 + 0.035 * Math.sin(5 * th + 1.3) + 0.025 * Math.sin(11 * th + 0.4)
+  const blobs = []
+  let guard = 0
+  while (blobs.length < 145 && guard++ < 30000) {
+    const x = 6 + rand() * (W - 12)
+    const y = 8 + rand() * 205
+    const dx = (x - DOME.cx) / DOME.rx
+    const dy = (y - DOME.cy) / DOME.ry
+    const th = Math.atan2(-dy, dx)
+    const rn = Math.hypot(dx, dy) // 0 centre .. 1 edge
+    const r = 10 + (1 - rn) * 14 + rand() * 4
+    // Inside the wobbled dome, fully (centre + radius).
+    if (rn + r / DOME.rx > wobble(th)) continue
+    // Arched underside: higher in the middle so the trunk and limbs show
+    // beneath the canopy, lower toward the sides where roots hang.
+    const underside = 214 - 52 * Math.max(0, 1 - Math.abs(dx) * 1.6)
+    if (y + r * 0.6 > underside) continue
+    // Even packing: skip a blob whose centre sits deep inside another.
+    if (blobs.some((b) => Math.hypot(b.x - x, b.y - y) < Math.min(b.r, r) * 0.55)) continue
+    // Tone: deep at the back/top, light toward the front and lower middle.
+    const z = rand() + (y / 210) * 0.5 - rn * 0.3
+    const tone = z < 0.45 ? 0 : z < 0.85 ? 1 : 2
+    blobs.push({ x, y, r, tone, th: Math.max(0, Math.min(Math.PI, th)) })
   }
-  const vb = [Math.floor(minX), Math.floor(minY), Math.ceil(maxX - minX), Math.ceil(maxY - minY)]
-  return { vb, rows: out }
+
+  // 12 regions (angular sectors seen from the dome centre). Each region
+  // blooms as the limb under it finishes, the middle first.
+  const REGIONS = 12
+  const canopy = Array.from({ length: REGIONS }, () => [])
+  for (const b of blobs) canopy[Math.min(REGIONS - 1, Math.floor((b.th / Math.PI) * REGIONS))].push(b)
+  const groups = canopy
+    .map((list, i) => {
+      if (!list.length) return null
+      const th = ((i + 0.5) / REGIONS) * Math.PI
+      const gx = DOME.cx + Math.cos(th) * DOME.rx * 0.7
+      const gy = DOME.cy - Math.sin(th) * DOME.ry * 0.7
+      // Nearest limb tip supports this region.
+      const tip = tips.reduce((best, t) => (Math.hypot(t[0] - gx, t[1] - gy) < Math.hypot(best[0] - gx, best[1] - gy) ? t : best))
+      const p0 = tip[2] - 0.06 + Math.abs(th - Math.PI / 2) * 0.03
+      const c = []
+      for (const b of list.sort((m, n) => m.tone - n.tone)) c.push(b.tone, r0(b.x), r0(b.y), r0(b.r))
+      return { a: span(p0, p0 + 0.14), c, p0 }
+    })
+    .filter(Boolean)
+
+  // Aerial roots: ~40 thin lines from the canopy underside, mostly on the
+  // left and right; some reach the ground, some hang free. Sway decays
+  // toward the bottom (gravity). Grouped into 8 bundles by x, each bundle
+  // starting just after the canopy region above it appears.
+  const BUNDLES = 8
+  const bundles = Array.from({ length: BUNDLES }, () => '')
+  const bundleStart = Array(BUNDLES).fill(1)
+  for (let i = 0; i < 42; i++) {
+    const side = rand() < 0.5 ? -1 : 1
+    const off = rand() < 0.8 ? 40 + rand() * 140 : 26 + rand() * 20
+    const x = CX + side * off
+    const y = 196 + rand() * 12 + Math.pow(off / 180, 3) * 10
+    const reach = rand() < 0.45 ? GY - 6 - y : (GY - y) * (0.35 + rand() * 0.45)
+    const sway = (rand() - 0.5) * 6
+    const d = `M${r0(x)} ${r0(y)}C${r0(x + sway)} ${r0(y + reach * 0.35)} ${r0(x - sway * 0.5)} ${r0(y + reach * 0.75)} ${r0(x + sway * 0.2)} ${r0(y + reach)}`
+    const bi = Math.min(BUNDLES - 1, Math.floor((x / W) * BUNDLES))
+    bundles[bi] += d
+    const th = Math.acos(Math.max(-1, Math.min(1, (x - DOME.cx) / DOME.rx)))
+    const g = groups[Math.min(groups.length - 1, Math.floor((th / Math.PI) * groups.length))]
+    bundleStart[bi] = Math.min(bundleStart[bi], g.p0 + 0.05 + rand() * 0.08)
+  }
+  const roots = bundles
+    .map((d, i) => (d ? { d, a: span(bundleStart[i], Math.min(1, bundleStart[i] + 0.22)) } : null))
+    .filter(Boolean)
+
+  const maxP = Math.max(...spans.map((sp) => sp[1]))
+  for (const sp of spans) {
+    const [p0, p1] = [sp[0] / maxP, sp[1] / maxP]
+    sp[0] = at(p0)
+    sp[1] = Math.max(60, at(p1) - at(p0))
+  }
+
+  return {
+    vb: [0, 0, W, 300],
+    T: TOTAL,
+    ground,
+    strands: strands.map(([d, w, sp]) => [d, w, sp[0], sp[1]]),
+    buttress: { d: buttress, a: buttressA },
+    limbs: limbs.map(([d, w, sp]) => [d, w, sp[0], sp[1]]),
+    canopy: groups.map(({ a, c }) => ({ a, c })),
+    roots,
+  }
 }
 
 // ---------- 4. icon morphs ----------
@@ -389,8 +478,15 @@ writeFileSync(
 writeFileSync(
   join(outDir, 'art.ts'),
   `// GENERATED by scripts/design.mjs - the landing page banyan, baked.\n` +
-    `// rows: [kind 0 wood | 1 leaf "cx cy r" | 2 root | 3 pillar, d, width, start ms, duration ms]\n` +
-    `export const TREE = ${JSON.stringify(tree)} as { vb: [number, number, number, number]; rows: [number, string, number, number, number][] }\n`,
+    `// Times are [start ms, duration ms] on one shared clock (global ease-out baked in).\n` +
+    `// canopy[].c = flat [tone, cx, cy, r, ...] (tone 0 deep, 1 mid, 2 light).\n` +
+    `type Span = [number, number]\n` +
+    `export const TREE = ${JSON.stringify(tree)} as {\n` +
+    `  vb: [number, number, number, number]; T: number\n` +
+    `  ground: { e: number[]; g: string; a: Span }\n` +
+    `  strands: [string, number, number, number][]; limbs: [string, number, number, number][]\n` +
+    `  buttress: { d: string; a: Span }; canopy: { a: Span; c: number[] }[]; roots: { d: string; a: Span }[]\n` +
+    `}\n`,
 )
 
-console.log(`design: ${Object.keys(hex.light).length} tokens x 2 modes, ${CHECKS.length * 2} contrast checks passed, banyan ${tree.rows.length} paths, ${Object.keys(morphs).length} icon morphs`)
+console.log(`design: ${Object.keys(hex.light).length} tokens x 2 modes, ${CHECKS.length * 2} contrast checks passed, banyan: ${tree.canopy.reduce((n, g) => n + g.c.length / 4, 0)} canopy blobs in ${tree.canopy.length} groups, ${tree.roots.length} root bundles, ${Object.keys(morphs).length} icon morphs`)

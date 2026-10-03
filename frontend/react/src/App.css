@@ -1676,42 +1676,73 @@ textarea {
   height: 100%;
 }
 
-.tree__wood,
-.tree__root {
+/* Flat colours from tokens only - no gradients, blur or shadows. */
+.tree__ground ellipse {
+  fill: var(--tree-ground);
+}
+
+.tree__ground path {
   fill: none;
-  stroke: var(--muted);
-  /* Butt caps: a not-yet-drawn path (zero-length dash) shows nothing,
-     where round caps would leave a dot. */
-  stroke-linecap: butt;
-  /* pathLength=1: dash 1 = the whole path; offset 1 hides it, 0 draws it. */
+  stroke: var(--tree-mid);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.tree__wood {
+  fill: none;
+  stroke: var(--tree-trunk);
+  stroke-linecap: round;
+}
+
+/* Draw-on: pathLength=1, so dash 1 is the whole path. */
+.tree__draw {
   stroke-dasharray: 1;
   stroke-dashoffset: 0;
+  /* Butt caps while hidden would still be invisible; round reads better
+     once drawn, and the pending state below hides the caps. */
 }
 
-.tree__root {
+.tree__roots {
+  fill: none;
+  stroke: var(--tree-trunk);
+  stroke-width: 1.2;
+  opacity: 0.85;
+}
+
+.tree__deep {
+  fill: var(--tree-deep);
+}
+
+.tree__mid {
+  fill: var(--tree-mid);
+}
+
+.tree__light {
+  fill: var(--tree-light);
+}
+
+/* Scale/spread around each group's own box: canopy regions bloom from
+   their centre, the ground from its middle, roots grow down from the top. */
+.tree__ground,
+.tree__buttress,
+.tree__bloom,
+.tree__roots {
   transform-box: fill-box;
   transform-origin: center;
 }
 
-/* Pillars: roots end up thicker (the static picture shows the final state). */
-.tree--static .tree__root {
-  transform: scaleX(2.4);
+.tree__ground,
+.tree__buttress {
+  transform-origin: center bottom;
 }
 
-.tree__leaf {
-  fill: var(--accent);
-  opacity: 0.5;
-  transform-box: fill-box;
-  transform-origin: center;
+.tree__roots {
+  transform-origin: center top;
 }
 
-/* Until the timeline starts (right after first paint) show nothing. */
-.tree--pending .tree__wood,
-.tree--pending .tree__root {
-  stroke-dashoffset: 1;
-}
-
-.tree--pending .tree__leaf {
+/* Before the timeline starts (first paint) show nothing, so there is no
+   flash of the finished tree. */
+.tree--pending [data-a] {
   opacity: 0;
 }
 
