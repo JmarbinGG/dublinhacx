@@ -89,13 +89,15 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       pointOf,
       describeDistance(listing) {
         const town = listing.owner.community ?? 'Unknown town'
-        if (home && listing.owner.community === home) return { text: 'Your town', tone: 'home', km: 0 }
+        const sameTown = Boolean(home && listing.owner.community === home)
         const theirs = pointOf(listing.owner.community)
-        const km = listing.distance_km ?? (homePoint && theirs ? distanceKm(homePoint, theirs) : null)
+        // Always name the town, even your own - every card saying "Your town"
+        // told people nothing.
+        const km = listing.distance_km ?? (homePoint && theirs ? distanceKm(homePoint, theirs) : sameTown ? 0 : null)
         if (km == null) return { text: town, tone: 'unknown', km: null }
         return {
           text: `${km < 1 ? '<1' : Math.round(km)} km · ${town}`,
-          tone: km <= NEARBY_KM ? 'near' : 'far',
+          tone: sameTown ? 'home' : km <= NEARBY_KM ? 'near' : 'far',
           km,
         }
       },

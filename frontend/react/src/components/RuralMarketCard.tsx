@@ -19,7 +19,7 @@ type Props = {
 
 /**
  * Four things only: the photo slot (tap to load), the title, one line of
- * terms, and how far away. The town shows only when it isn't yours.
+ * terms, and how far away (distance and town).
  */
 export default function RuralMarketCard({ listing, hideCategory, actions, note, index }: Props) {
   const { describeDistance } = useCommunities()
