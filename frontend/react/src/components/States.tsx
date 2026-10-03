@@ -2,23 +2,21 @@
 
 export function Loading({ label = 'Loading...' }: { label?: string }) {
   return (
-    <p className="state" role="status">
+    <p className="state" role="status" aria-live="polite">
       {label}
     </p>
   )
 }
 
 export function Empty({ message }: { message: string }) {
-  return <p className="state">{message}</p>
+  return (
+    <p className="state" role="status" aria-live="polite">
+      {message}
+    </p>
+  )
 }
 
-export function ErrorState({
-  message,
-  onRetry,
-}: {
-  message: string
-  onRetry?: () => void
-}) {
+export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
     <div className="state state--error" role="alert">
       <p>{message}</p>

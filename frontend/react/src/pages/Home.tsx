@@ -1,34 +1,31 @@
 import { Link } from 'react-router-dom'
 import HomePicker from '../components/HomePicker'
-import RuralMarketCard from '../components/RuralMarketCard'
+import ItemGrid from '../components/ItemGrid'
 import SearchBar from '../components/SearchBar'
 import Stats from '../components/Stats'
-import { ErrorState, Loading } from '../components/States'
-import { NEARBY_MILES, useCommunities } from '../context/CommunityContext'
-import { useItems } from '../hooks/useItems'
-import { applyFilters } from '../lib/filters'
+import { useCommunities } from '../context/CommunityContext'
+import { useListings } from '../hooks/useItems'
+import { LISTING_TYPES } from '../types'
 
 /**
- * App home: why the marketplace exists, your community, search, and a
- * "worth the drive" shelf - specialized listings from beyond walking distance.
+ * App home: what Banyan is for, your town, search, the three kinds of
+ * things people share, then two shelves - what other towns offer and who
+ * nearby needs a hand.
  */
 export default function Home() {
-  const { data, loading, error } = useItems('')
-  const { home, distanceTo } = useCommunities()
+  const { home, homePoint } = useCommunities()
+  const near = homePoint ? { lat: homePoint.lat, lng: homePoint.lng } : {}
 
-  const worthTheDrive = applyFilters(
-    data ?? [],
-    { band: home ? 'beyond5' : 'all', category: '', specialized: true, sort: 'nearest' },
-    distanceTo,
-  ).slice(0, 6)
+  const otherTowns = useListings({ kind: 'offer', exclude_community: home ?? undefined, limit: 6, ...near })
+  const wanted = useListings({ kind: 'request', limit: 3, ...near })
 
   return (
     <>
       <section className="hero">
-        <h1>Find what your neighbors don't have.</h1>
+        <h1>Share what you have. Find what you need.</h1>
         <p>
-          Heirloom seed, heavy equipment, craft skills and bulk trade from communities a short
-          drive away - worth the trip when it's something you can't get next door.
+          Spare materials, idle equipment, and the skills to get a job done - shared between
+          neighbours and the towns around you.
         </p>
         <div className="hero__home">
           <HomePicker />
@@ -36,25 +33,44 @@ export default function Home() {
         <SearchBar size="large" />
       </section>
 
-      <section>
-        <div className="section-heading">
-          <h2>Worth the drive{home && <span> · beyond {NEARBY_MILES} miles</span>}</h2>
-          <Link to={home ? '/search?band=beyond5&special=1' : '/search?special=1'}>
-            See all specialized trade &rarr;
+      <section className="type-tiles" aria-label="Browse by type">
+        {LISTING_TYPES.map((type) => (
+          <Link key={type.id} to={`/search?type=${type.id}`} className={`type-tile type-tile--${type.id}`}>
+            <span className="type-tile__label">{type.label}</span>
+            <span className="type-tile__blurb">{type.blurb}</span>
           </Link>
-        </div>
-        {loading && <Loading label="Loading listings..." />}
-        {error && <ErrorState message={error} onRetry={() => window.location.reload()} />}
-        {!loading && !error && (
-          <div className="grid">
-            {worthTheDrive.map((item) => (
-              <RuralMarketCard key={item.id} item={item} />
-            ))}
-          </div>
-        )}
+        ))}
       </section>
 
-      {data && <Stats items={data} />}
+      <section>
+        <div className="section-heading">
+          <h2>{home ? <>From towns beyond {home}</> : 'Offered across the network'}</h2>
+          <Link to={home ? '/search?scope=others&kind=offer' : '/search?kind=offer'}>See all &rarr;</Link>
+        </div>
+        <ItemGrid
+          listings={otherTowns.data}
+          loading={otherTowns.loading}
+          error={otherTowns.error}
+          emptyMessage="Nothing offered yet."
+          onRetry={otherTowns.reload}
+        />
+      </section>
+
+      <section>
+        <div className="section-heading">
+          <h2>Someone needs a hand</h2>
+          <Link to="/search?kind=request">All requests &rarr;</Link>
+        </div>
+        <ItemGrid
+          listings={wanted.data}
+          loading={wanted.loading}
+          error={wanted.error}
+          emptyMessage="No open requests right now."
+          onRetry={wanted.reload}
+        />
+      </section>
+
+      <Stats />
     </>
   )
 }

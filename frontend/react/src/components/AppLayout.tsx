@@ -1,12 +1,13 @@
 import { Outlet } from 'react-router-dom'
+import AssistantWidget from './assistant/AssistantWidget'
 import ConnectionStatus from './ConnectionStatus'
 import Footer from './Footer'
 import Navbar from './Navbar'
 
 /**
- * Shared chrome (navbar + footer) for every in-app route. The marketing
- * landing page at "/" is intentionally NOT wrapped in this - it's meant to
- * feel separate from the app, not like just another page inside it.
+ * Shared chrome for every in-app route: navbar, offline banner, footer and
+ * the assistant, which stays mounted (and keeps its conversation) across
+ * routes. The landing page at "/" is not wrapped in this.
  */
 export default function AppLayout() {
   return (
@@ -17,6 +18,7 @@ export default function AppLayout() {
         <Outlet />
       </main>
       <Footer />
+      <AssistantWidget />
     </div>
   )
 }

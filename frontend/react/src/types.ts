@@ -1,45 +1,93 @@
-/** Mirrors backend/main.py's ItemOut / ItemDetail / CommunityOut schemas. */
+/** Mirrors backend/schemas.py - the API contract. */
 
-export const CATEGORIES = [
-  { id: 'produce', label: 'Produce', blurb: 'Eggs, honey, bulk grain, seasonal crops' },
-  { id: 'seeds', label: 'Seeds', blurb: 'Heirloom and open-pollinated seed stock' },
-  { id: 'heavy_tools', label: 'Heavy Tools', blurb: 'Tractors, balers, splitters, excavators' },
-  { id: 'skills_services', label: 'Skills & Services', blurb: 'Farriers, welders, sawyers, builders' },
-  { id: 'general', label: 'General', blurb: 'Firewood, reclaimed materials, everything else' },
+export const LISTING_TYPES = [
+  { id: 'material', label: 'Materials', blurb: 'Spare bricks, pipe, seed, fabric, timber' },
+  { id: 'equipment', label: 'Equipment & tools', blurb: 'Pump sets, sprayers, tillers, ladders' },
+  { id: 'skill', label: 'Skills & jobs', blurb: 'Repairs, tailoring, teaching, farm work' },
 ] as const
 
-export type Category = (typeof CATEGORIES)[number]['id']
+export type ListingType = (typeof LISTING_TYPES)[number]['id']
+export type ListingKind = 'offer' | 'request'
+export type ExchangeType = 'free' | 'lend' | 'trade' | 'paid'
+export type ListingStatus = 'available' | 'pending' | 'closed'
 
-/** The categories worth a drive - things a next-door neighbor rarely has. */
-export const SPECIALIZED_CATEGORIES: readonly Category[] = ['seeds', 'heavy_tools', 'skills_services']
+export const EXCHANGES: { id: ExchangeType; label: string }[] = [
+  { id: 'free', label: 'Free' },
+  { id: 'lend', label: 'Lend' },
+  { id: 'trade', label: 'Trade' },
+  { id: 'paid', label: 'Paid' },
+]
 
-export function categoryLabel(id: string): string {
-  return CATEGORIES.find((category) => category.id === id)?.label ?? id
+export const STATUSES: { id: ListingStatus; label: string }[] = [
+  { id: 'available', label: 'Available' },
+  { id: 'pending', label: 'Pending' },
+  { id: 'closed', label: 'Closed' },
+]
+
+export function typeLabel(type: string): string {
+  return LISTING_TYPES.find((t) => t.id === type)?.label ?? type
 }
 
-export type Community = {
-  id: string
+export function exchangeLabel(exchange: string): string {
+  return EXCHANGES.find((e) => e.id === exchange)?.label ?? exchange
+}
+
+/** "Offering" / "Wanted" - a job posting is a skill request. */
+export function kindLabel(listing: Pick<Listing, 'type' | 'kind'>): string {
+  if (listing.kind === 'request') return listing.type === 'skill' ? 'Help wanted' : 'Wanted'
+  return 'Offering'
+}
+
+export type UserSummary = {
+  id: number
   name: string
-  lat: number
-  lng: number
-  approximate_population?: number | null
+  photo?: string | null
+  community?: string | null
 }
 
-export type Item = {
-  id: string
-  community_id: string
-  category: Category
+export type UserPublic = UserSummary & {
+  bio?: string | null
+  latitude?: number | null
+  longitude?: number | null
+  /** Whatever the user chose to make public - an email, phone, or a note. */
+  contact?: string | null
+  created_at: string
+}
+
+/** Only ever returned to the user themselves. */
+export type UserPrivate = UserPublic & { email: string }
+
+export type Profile = UserPublic & { listings: Listing[] }
+
+export type Listing = {
+  id: number
+  type: ListingType
+  kind: ListingKind
   title: string
   description?: string | null
-  price_or_exchange?: string | null
-  image_url?: string | null
-  image_size_kb?: number | null
-  created_at: string
+  category?: string | null
+  tags: string[]
+  image?: string | null
   quantity?: string | null
-  tags?: string | null
-  status?: string | null
-  owner?: string | null
-  owner_id?: number | null
-  /** Only present on the detail endpoint, and only for signed-in viewers. */
-  contact_email?: string | null
+  exchange: ExchangeType
+  price?: string | null
+  status: ListingStatus
+  created_at: string
+  updated_at: string
+  owner: UserSummary
+  /** Only set when the request passed lat/lng. */
+  distance_km?: number | null
+}
+
+export type CommunityStat = {
+  name: string
+  members: number
+  listings: number
+}
+
+export type SearchResponse = {
+  query: string
+  engine: 'ai' | 'keyword'
+  listings: Listing[]
+  users: UserPublic[]
 }

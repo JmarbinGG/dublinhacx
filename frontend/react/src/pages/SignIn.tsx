@@ -15,7 +15,7 @@ export default function SignIn() {
     setError(null)
     setSubmitting(true)
     try {
-      await login(email, password)
+      await login(email.trim(), password)
       navigate('/app')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong.')
@@ -28,19 +28,16 @@ export default function SignIn() {
     <div className="auth-layout">
       <div className="auth-pitch">
         <h2>Welcome back.</h2>
-        <p>
-          Pick up where you left off - see what the communities around you are offering, or
-          post something of your own.
-        </p>
+        <p>See what your town and the towns around it are sharing, or post something of your own.</p>
         <ul>
-          <li>See contact details and make offers</li>
-          <li>Post listings - even offline, they sync when you reconnect</li>
-          <li>Keep track of everything you've posted</li>
+          <li>Find tools to borrow and materials to reuse</li>
+          <li>Offer a skill, or ask for help with a job</li>
+          <li>Post even when offline - it sends when you reconnect</li>
         </ul>
       </div>
 
       <section className="auth-panel">
-        <h1>Sign In</h1>
+        <h1>Sign in</h1>
 
         <form onSubmit={handleSubmit}>
           <div className="form-field">
@@ -74,12 +71,12 @@ export default function SignIn() {
           )}
 
           <button type="submit" className="primary-button" disabled={submitting}>
-            {submitting ? 'Signing in...' : 'Sign In'}
+            {submitting ? 'Signing in...' : 'Sign in'}
           </button>
         </form>
 
         <p className="auth-switch">
-          Don't have an account? <Link to="/signup">Sign up</Link>
+          New here? <Link to="/signup">Join Banyan</Link>
         </p>
       </section>
     </div>

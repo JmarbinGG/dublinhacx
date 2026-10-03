@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { AuthProvider } from './auth/AuthContext.tsx'
+import { AssistantProvider } from './context/AssistantContext.tsx'
 import { CommunityProvider } from './context/CommunityContext.tsx'
 import { DataBudgetProvider } from './context/DataBudgetContext.tsx'
 import './index.css'
@@ -13,7 +14,9 @@ createRoot(document.getElementById('root')!).render(
       <AuthProvider>
         <CommunityProvider>
           <DataBudgetProvider>
-            <App />
+            <AssistantProvider>
+              <App />
+            </AssistantProvider>
           </DataBudgetProvider>
         </CommunityProvider>
       </AuthProvider>
