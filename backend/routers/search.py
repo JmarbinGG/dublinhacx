@@ -265,7 +265,7 @@ def ai_search(
     if f.exchange:
         query = query.filter(Listing.exchange == f.exchange)
     if f.category:
-        query = query.filter(Listing.category.ilike(f.category))
+        query = query.filter(Listing.category == f.category)
     if origin and f.scope == "town":
         query = query.filter(User.community == origin.name)
     elif origin and f.scope == "others":

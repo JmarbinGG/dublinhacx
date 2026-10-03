@@ -28,6 +28,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session as DbSession
 
+import categories
 import communities
 import llm
 from auth import optional_user
@@ -177,7 +178,7 @@ def _search_tool(db, sess, query_text, listing_type, exchange, kind) -> list[tup
     if kind:
         q = q.filter(Listing.kind == kind)
     if f.get("category"):
-        q = q.filter(Listing.category.ilike(f["category"]))
+        q = q.filter(Listing.category == categories.normalize(f["category"]))
     q = q.order_by(Listing.created_at.desc(), Listing.id.desc())
 
     rows = q.filter(*keyword_filter(query_text)).limit(RESULTS_PER_SEARCH).all() if query_text else []

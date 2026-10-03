@@ -1,16 +1,17 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session as DbSession
 
+import categories
 import communities
 from auth import current_user
 from database import get_db
-from models import User
+from models import Listing, User
 from routers.listings import listing_out, name_filter, origin_for
 from storage import delete_if_orphaned
-from schemas import CommunityOut, ProfileOut, UserPrivate, UserPublic, UserUpdate
+from schemas import CategoryOut, CommunityOut, ProfileOut, UserPrivate, UserPublic, UserUpdate
 from textutil import MAX_QUERY_CHARS, like_pattern, query_words
 
 router = APIRouter(tags=["users"])
@@ -90,6 +91,16 @@ def get_profile(user_id: int, include_closed: bool = False, db: DbSession = Depe
         **UserPublic.model_validate(user).model_dump(),
         listings=[listing_out(l) for l in listings],
     )
+
+
+@router.get("/api/categories", response_model=list[CategoryOut])
+def list_categories(db: DbSession = Depends(get_db)):
+    """The fixed categories, in display order, with available-listing counts.
+    Use the ids for `category` when posting and filtering."""
+    counts = dict(
+        db.query(Listing.category, func.count(Listing.id)).filter(Listing.status == "available").group_by(Listing.category).all()
+    )
+    return [CategoryOut(id=cid, label=label, count=counts.get(cid, 0)) for cid, label in categories.CATEGORIES]
 
 
 @router.get("/api/communities", response_model=list[CommunityOut])

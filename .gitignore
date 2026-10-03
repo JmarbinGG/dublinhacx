@@ -10,8 +10,10 @@ venv/
 # Local dev database
 listings.db
 
-# User-uploaded photos (runtime content, not source)
-backend/uploads/
+# User-uploaded photos (runtime content, not source) - except the seed
+# images the committed app.db points at.
+backend/uploads/*
+!backend/uploads/seed-*
 
 # Node
 node_modules/

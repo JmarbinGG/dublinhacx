@@ -5,6 +5,7 @@ from pydantic import ValidationError
 from sqlalchemy import or_
 from sqlalchemy.orm import Query as OrmQuery, Session as DbSession, joinedload
 
+import categories
 import communities
 from auth import current_user
 from communities import Community
@@ -163,7 +164,7 @@ def list_listings(
     if status:
         query = query.filter(Listing.status == status)
     if category:
-        query = query.filter(Listing.category.ilike(category))
+        query = query.filter(Listing.category == categories.normalize(category))
     if community_id:
         query = query.filter(User.community == communities.resolve(db, community_id).name)
     if community:
@@ -189,6 +190,64 @@ def list_listings(
     # Distances are computed in Python, so page after sorting.
     pairs = with_distances(db, query.all(), origin, min_km, max_km, sort)
     return [listing_out(l, d) for l, d in pairs[offset : offset + limit]]
+
+
+SUMMARY_GROUPS = [
+    # (group id, type, kind) - matches the frontend's home-page groups; every
+    # available listing is in exactly one.
+    ("materials", "material", "offer"),
+    ("equipment", "equipment", "offer"),
+    ("skills", "skill", "offer"),
+    ("help", None, "request"),
+]
+
+
+def compact(listing: Listing, distance_km: Optional[float] = None) -> dict:
+    """A listing row for lists: everything a card needs, no description."""
+    return listing_out(listing, distance_km).model_dump(mode="json", exclude={"description"}, exclude_none=True)
+
+
+@router.get("/summary")
+def listings_summary(
+    lat: Optional[float] = Query(None, ge=-90, le=90),
+    lng: Optional[float] = Query(None, ge=-180, le=180),
+    from_community: Optional[str] = None,
+    community: Optional[str] = Query(None, max_length=120, description="Only this town"),
+    per_group: int = Query(4, ge=1, le=12),
+    db: DbSession = Depends(get_db),
+):
+    """Home page in one request. For each group (materials, equipment,
+    skills, help) the available count, counts per category, and the first
+    `per_group` listings - nearest first with lat/lng or from_community,
+    else newest. Plus overall category counts.
+
+    {"materials": {"count": 6, "categories": {"farming": 3, ...}, "items": [row, ...]},
+     "equipment": {...}, "skills": {...}, "help": {...},
+     "categories": [{"id": "farming", "label": "Farming", "count": 11}, ...]}
+    """
+    query = base_query(db).filter(Listing.status == "available")
+    if community:
+        query = query.filter(name_filter(User.community, community))
+    rows = query.order_by(Listing.created_at.desc(), Listing.id.desc()).all()
+    origin = origin_for(db, from_community, lat, lng)
+    pairs = with_distances(db, rows, origin, sort="nearest" if origin else "newest")
+
+    out: dict = {}
+    for gid, ltype, kind in SUMMARY_GROUPS:
+        members = [(l, d) for l, d in pairs if l.kind == kind and (ltype is None or l.type == ltype)]
+        counts: dict[str, int] = {}
+        for l, _ in members:
+            counts[l.category or "other"] = counts.get(l.category or "other", 0) + 1
+        out[gid] = {
+            "count": len(members),
+            "categories": counts,
+            "items": [compact(l, d) for l, d in members[:per_group]],
+        }
+    totals: dict[str, int] = {}
+    for l, _ in pairs:
+        totals[l.category or "other"] = totals.get(l.category or "other", 0) + 1
+    out["categories"] = [{"id": cid, "label": label, "count": totals.get(cid, 0)} for cid, label in categories.CATEGORIES]
+    return out
 
 
 @router.get("/{listing_id}", response_model=ListingOut)

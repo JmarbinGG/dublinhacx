@@ -1,8 +1,9 @@
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, field_validator, model_validator
 
+import categories
 import storage
 from communities import slugify
 from textutil import MAX_QUERY_CHARS
@@ -106,6 +107,8 @@ class ListingBase(BaseModel):
     kind: ListingKind = "offer"
     title: str = Field(min_length=1, max_length=120)
     description: Optional[str] = Field(None, max_length=4000)
+    # One of GET /api/categories ids. Labels and old free text are accepted
+    # and mapped (e.g. "farm tools" -> "farming").
     category: Optional[str] = Field(None, max_length=60)
     tags: list[str] = []
     image: Optional[str] = None
@@ -123,6 +126,11 @@ class ListingCreate(ListingBase):
     # Client-generated id (e.g. a UUID) for offline-queued posts. Re-sending
     # the same client_id returns the existing listing instead of a duplicate.
     client_id: Optional[str] = Field(None, min_length=1, max_length=64)
+
+    @model_validator(mode="after")
+    def _category(self):
+        self.category = categories.normalize(self.category, f"{self.title} {' '.join(self.tags)}")
+        return self
 
 
 class BatchEntry(BaseModel):
@@ -160,6 +168,11 @@ class ListingUpdate(BaseModel):
     price: Optional[str] = Field(None, max_length=60)
     status: Optional[ListingStatus] = None
 
+    @field_validator("category")
+    @classmethod
+    def _category(cls, v):
+        return None if v is None else categories.normalize(v)
+
 
 class ListingOut(ListingBase):
     model_config = ConfigDict(from_attributes=True)
@@ -190,6 +203,12 @@ class ProfileOut(UserPublic):
 
 
 # ---------- communities & search ----------
+
+
+class CategoryOut(BaseModel):
+    id: str
+    label: str
+    count: int  # available listings
 
 
 class CommunityOut(BaseModel):
@@ -223,6 +242,11 @@ class AISearchFilters(BaseModel):
     kind: Optional[ListingKind] = None
     exchange: Optional[ExchangeType] = None
     category: Optional[str] = Field(None, max_length=60)
+
+    @field_validator("category")
+    @classmethod
+    def _category(cls, v):
+        return None if not v else categories.normalize(v)
     max_km: Optional[float] = Field(None, gt=0, le=1000)  # needs a community
     # The frontend's town scope: town = only the shopper's community,
     # others = everywhere else, near = within 50 km.

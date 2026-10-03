@@ -39,9 +39,10 @@ from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
-from sqlalchemy import func, or_
+from sqlalchemy import or_
 from sqlalchemy.orm import Session as DbSession
 
+import categories
 import communities
 import llm
 import storage
@@ -62,7 +63,7 @@ DEFAULT_LIMIT = 12
 MAX_LIMIT = 24
 CANDIDATE_CAP = 300
 MAX_TERMS = 8
-SMALL_TIMEOUT_S = 4
+SMALL_TIMEOUT_S = 5
 BIG_TIMEOUT_S = 8
 REQUEST_BUDGET_S = 14  # all model calls for one request; the client gives up at 20s
 NEAR_KM = 25
@@ -97,6 +98,7 @@ class SearchState(BaseModel):
     type: Optional[ListingType] = None
     kind: Optional[ListingKind] = None
     exchange: Optional[ExchangeType] = None
+    category: Optional[str] = None  # one of GET /api/categories ids
     max_km: Optional[float] = Field(None, gt=0, le=500)
     need: Optional[str] = Field(None, max_length=120)  # complex mode: what the shopper is trying to do
     refinements: list[str] = []  # what the shopper typed to refine, oldest first
@@ -110,6 +112,11 @@ class SearchState(BaseModel):
     @classmethod
     def _attrs(cls, v):
         return _clean_word_list(v, 6, 30)
+
+    @field_validator("category")
+    @classmethod
+    def _category(cls, v):
+        return v if v in categories.LABELS else None
 
     @field_validator("refinements", mode="before")
     @classmethod
@@ -184,12 +191,12 @@ FILLER = STOPWORDS | {"only", "just", "pieces", "piece", "pcs", "units", "unit",
                       "thing", "things", "stuff", "something", "anything", "can", "could", "would", "use", "using",
                       "down", "up", "out", "make", "get", "good", "best", "how", "which", "should", "will"}
 ANY_CLEARS = {"size": {"attrs": []}, "amount": {"qty": None}, "quantity": {"qty": None},
-              "distance": {"max_km": None}, "price": {"exchange": None}}
-CLEAR_ALL = {"attrs": [], "qty": None, "max_km": None, "exchange": None, "type": None, "kind": None}
+              "distance": {"max_km": None}, "price": {"exchange": None}, "category": {"category": None}}
+CLEAR_ALL = {"attrs": [], "qty": None, "max_km": None, "exchange": None, "type": None, "kind": None, "category": None}
 
 _DISTANCE_RE = re.compile(r"\bwithin\s+(\d{1,3})\s*(km|kms|kilometres?|kilometers?|mi|miles?)?\b")
 _NEAR_RE = re.compile(r"\b(near(by)?|close( by)?|local)\b")
-_ANY_RE = re.compile(r"\b(any|clear|reset)\s+(size|amount|quantity|distance|price|filters?)\b")
+_ANY_RE = re.compile(r"\b(any|clear|reset)\s+(size|amount|quantity|distance|price|category|filters?)\b")
 _ONLY_RE = re.compile(r"^only\s+([a-z][a-z0-9 \-]{1,40})$")
 _COMPLEX_RE = re.compile(
     r"\b(something|things?|stuff|anything|how|what|which|need to|want to|so (that )?i|i can|help me|"
@@ -249,6 +256,8 @@ def parse_rules(text: str, initial: bool) -> tuple[dict, list[str]]:
             changes["exchange"] = EXCHANGE_WORDS[w]
         elif not initial and w in TYPE_WORDS:
             changes["type"] = TYPE_WORDS[w]
+        elif not initial and (cid := categories.match_word(w)):
+            changes["category"] = cid
         elif w in KIND_WORDS:
             changes["kind"] = KIND_WORDS[w]
         elif w not in FILLER and len(w) > 1:
@@ -348,7 +357,7 @@ Return only JSON: {"need": "<what they're trying to do, under 60 characters>", \
 1-2 words each, singular]}
 Include both tools and the skill/person who could do it when that makes sense \
 (e.g. cutting down a tree: "axe", "chainsaw", "bow saw", "rope", "tree felling").
-Prefer words that match the categories already on Banyan, given as data below.
+Only list things that directly help with the goal.
 
 """ + SAFETY_RULES
 
@@ -379,17 +388,6 @@ def _store(key: str, value: dict) -> None:
         _cache.move_to_end(key)
         while len(_cache) > CACHE_SIZE:
             _cache.popitem(last=False)
-
-
-def _categories(db: DbSession) -> list[str]:
-    rows = (
-        db.query(func.lower(Listing.category))
-        .filter(Listing.category.isnot(None), Listing.status == "available")
-        .distinct()
-        .limit(40)
-        .all()
-    )
-    return [clip(strip_urls(r[0]), 30) for r in rows if r[0]]
 
 
 class _ModelBudget:
@@ -471,7 +469,7 @@ def expand_search(db: DbSession, q: str, base: SearchState, models: _ModelBudget
     small one with whatever time is left. None if neither could help."""
     messages = [
         {"role": "system", "content": EXPAND_PROMPT},
-        {"role": "user", "content": f"Shopper's goal:\n{fence(q)}\n\nCategories on Banyan:\n{fence(_categories(db))}"},
+        {"role": "user", "content": f"Shopper's goal:\n{fence(q)}"},
     ]
     expand = models.call(messages, _Expand, BIG_TIMEOUT_S, llm.big_model())
     if (expand is None or not expand.terms) and llm.small_model() != llm.big_model():
@@ -542,6 +540,8 @@ def run_state(
         query = query.filter(Listing.kind == state.kind)
     if state.exchange:
         query = query.filter(Listing.exchange == state.exchange)
+    if state.category:
+        query = query.filter(Listing.category == state.category)
 
     terms = state.terms or state.attrs or [state.q.lower()]
     term_words = [[stem(w) for w in t.split() if w not in STOPWORDS] or [stem(t)] for t in terms]
@@ -628,6 +628,8 @@ def _suggestions(state: SearchState, origin: Optional[Community], empty: bool) -
         out.append(Suggestion(label="Any exchange", refine="any price"))
     if empty and state.max_km:
         out.append(Suggestion(label="Any distance", refine="any distance"))
+    if empty and state.category:
+        out.append(Suggestion(label="Any category", refine="any category"))
     if not state.exchange:
         out.append(Suggestion(label="Free only", refine="free"))
     if origin and not state.max_km:

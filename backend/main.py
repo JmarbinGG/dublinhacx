@@ -14,7 +14,9 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
 
 import auth
-from database import Base, engine
+import categories
+from database import Base, SessionLocal, engine
+from models import Listing
 from routers import assistant, listings, search, smart_search, uploads, users
 from storage import UPLOAD_DIR
 
@@ -27,6 +29,12 @@ if "client_id" not in {c["name"] for c in inspect(engine).get_columns("listings"
         conn.execute(text(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_listing_owner_client ON listings (owner_id, client_id)"
         ))
+
+# Categories used to be free text: map any old value onto the fixed list.
+with SessionLocal() as _db:
+    for _l in _db.query(Listing).filter((Listing.category.is_(None)) | (Listing.category.notin_(categories.IDS))):
+        _l.category = categories.normalize(_l.category, f"{_l.title} {_l.tags or ''}")
+    _db.commit()
 
 PRODUCTION = os.getenv("APP_ENV") == "production"
 
