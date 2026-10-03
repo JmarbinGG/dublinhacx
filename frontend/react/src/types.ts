@@ -77,10 +77,17 @@ export type Listing = {
   owner: UserSummary
   /** Only set when the request passed lat/lng. */
   distance_km?: number | null
+  /** Photo size, when the backend sends it - shown before "Load image". */
+  image_size_kb?: number | null
 }
 
 export type CommunityStat = {
+  /** Slug, e.g. "palm-grove". */
+  id?: string
   name: string
+  /** Community centre, rounded to ~1 km. */
+  lat?: number | null
+  lng?: number | null
   members: number
   listings: number
 }

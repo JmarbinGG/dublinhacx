@@ -54,7 +54,8 @@ export async function flushQueue(token: string): Promise<number> {
   try {
     for (const entry of readQueue().filter((e) => !e.error)) {
       try {
-        await createListing(entry.listing, token)
+        // client_id makes a retried post idempotent on the server.
+        await createListing({ ...entry.listing, client_id: entry.client_id }, token)
         discardQueued(entry.client_id)
         posted++
       } catch (error) {

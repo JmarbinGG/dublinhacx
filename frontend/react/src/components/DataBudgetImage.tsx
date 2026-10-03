@@ -7,6 +7,8 @@ type Props = {
   alt: string
   /** Square avatar-style frame instead of 4:3. */
   square?: boolean
+  /** Size from the API (image_size_kb). When known, no HEAD request is made. */
+  knownSizeKb?: number | null
 }
 
 // The API doesn't send image sizes, so ask the server with a HEAD request
@@ -43,13 +45,14 @@ function useImageSize(url: string | null, enabled: boolean): number | null | und
  * loaded it stays visible for the rest of the session. Images from hosts we
  * don't trust are never shown.
  */
-export default function DataBudgetImage({ src, alt, square }: Props) {
+export default function DataBudgetImage({ src, alt, square, knownSizeKb }: Props) {
   const url = resolveImageUrl(src)
   const { isLoaded, recordLoad, usedKb, budgetKb, saver } = useDataBudget()
   const [shown, setShown] = useState(() => (url ? isLoaded(url) : false))
   const [failed, setFailed] = useState(false)
   // Data saver skips even the tiny HEAD request for the size.
-  const sizeKb = useImageSize(url, !shown && navigator.onLine && !saver)
+  const checkedKb = useImageSize(url, knownSizeKb == null && !shown && navigator.onLine && !saver)
+  const sizeKb = knownSizeKb ?? checkedKb
 
   if (!url) return null
   const frame = `budget-image${square ? ' budget-image--square' : ''}`

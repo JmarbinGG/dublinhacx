@@ -48,7 +48,8 @@ export default function DataSaver() {
       <h2>AI answers</h2>
       <label className="toggle">
         <input type="checkbox" checked={aiAnswers} onChange={(e) => setAiAnswers(e.target.checked)} />
-        Show "Ask AI" and the assistant (about 2 KB per answer, only when you ask)
+        Let search use AI for questions like "things I can use to cut down a tree" (a few KB, and slower). Off means
+        plain keyword search only.
       </label>
 
       <p>

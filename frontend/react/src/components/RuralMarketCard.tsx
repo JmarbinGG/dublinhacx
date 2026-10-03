@@ -33,7 +33,7 @@ export default function RuralMarketCard({ listing, actions, note, index }: Props
       className={`card${wanted ? ' card--wanted' : ''}`}
       style={index !== undefined ? ({ '--i': index } as React.CSSProperties) : undefined}
     >
-      {listing.image && <DataBudgetImage src={listing.image} alt={listing.title} />}
+      {listing.image && <DataBudgetImage src={listing.image} alt={listing.title} knownSizeKb={listing.image_size_kb} />}
       <h3 className="card__title">
         <Link to={`/listings/${encodeURIComponent(listing.id)}`}>{listing.title}</Link>
       </h3>

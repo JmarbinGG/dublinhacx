@@ -1,73 +1,69 @@
-# AI endpoints the frontend calls
+# Search and AI endpoints the frontend uses
 
-The frontend is built against these routes. Until they exist, `npm run dev`
-gets a 404 from them and shows a labelled **demo** answer built from the
-keyword search. In a production build, the 404 shows "AI isn't available
-right now", and regular search keeps working.
+## 1. One search bar: `POST /api/search/smart` (built in `routers/smart_search.py`)
 
-The frontend checks every response against the shapes below and rejects
-anything that doesn't match. It only shows listings it can re-fetch by id
-from `/api/listings/{id}`.
+The frontend uses this endpoint as built. There is no separate "Ask AI"
+button anymore, and the frontend no longer calls `/api/search/ai`. That route
+can be removed if nothing else uses it.
 
-## Endpoints
+How the frontend calls it:
 
-| Endpoint | Request body | Response |
-|---|---|---|
-| `GET /api/search?q=&type=&community=&limit=` (exists) | – | `{ query, engine: "ai" \| "keyword", listings, users }` |
-| `POST /api/search/ai` | `{ q, filters: { type?, kind?, exchange?, scope? }, community }` | `{ summary, picks: [{ id, why }], caveats: string[], engine }` |
-| `POST /api/assistant/session` | `{}` | `{ session_id }` |
-| `POST /api/assistant/chat` | `{ session_id, message, community? }` | `{ text, chips: [{ code, label }], listing_ids: number[] }` |
-| `POST /api/assistant/report` | `{ session_id, reason }` | `{ ok: true }` |
+| Step | Body sent |
+|---|---|
+| New search | `{ q, community, limit: 12 }`, where `q` is at most 200 characters and 8 words, with contact details stripped |
+| Each refinement, oldest first | `{ state, refine, community, limit }`, with the raw term passed through and never interpreted on the client |
+| Removed term or inline filter | `{ state, community, limit }`, where the client has edited `state.terms`, `type`, `kind`, `exchange` or `max_km` |
+| Show more | `{ state, offset, community, limit }` |
 
-Field notes:
+- **Caching.** Every request is cached on the device by its exact body for
+  15 minutes. Removing the last refinement chip or pressing Back costs no
+  network.
+- **One request at a time.** A refine chain runs one step after another,
+  never in parallel. A new search or Cancel aborts it.
+- **How the response is used:**
+  - `ai` true shows the label "AI-assisted, may be wrong".
+  - When `mode` is `complex`, `state.terms` are shown as removable
+    "Searched for" chips, introduced with `state.need`.
+  - Each `suggestions` entry becomes a chip that sends its `refine` value.
+  - A card's `match` is shown as "Matches: …".
+  - Cards without an integer `id`/`owner_id` or a string `title`/`owner_name`
+    are dropped.
+- **Fallbacks.** On any failure (an error, a 20-second timeout, or a `429`
+  with `Retry-After`), the frontend uses `GET /api/search?q=<q and
+  refinements>&limit=12&offset=` and shows a one-line note. Offline, it uses
+  saved copies, then keyword matches over listings saved on the device.
+- **AI opt-out.** When the user turns AI off in Data saver, the frontend uses
+  plain keyword browse (`GET /api/listings?q=`) and doesn't call `/smart`.
 
-- **Auth.** The frontend sends `Authorization: Bearer <token>` when the user
-  is signed in. Signed-out users are also allowed to call these routes, so
-  either give anonymous callers a small allowance or return `401`.
-- **`community`** is a town name such as "Greenfield". The frontend never
-  sends coordinates, emails or phone numbers. It also strips anything that
-  looks like contact details from chat text before sending.
-- **`message`** is at most 500 characters, **`q`** at most 200. Both are
-  trimmed, with whitespace collapsed.
-- **Response sizes.** The frontend keeps at most:
-  - `picks`, `chips` and `listing_ids`: 6 items each
-  - `caveats`: 4 items
-  - `summary`: 1200 characters, `why`: 300, `text`: 1500, `session_id`: 128
+Could the backend add these?
 
-  Anything longer is cut.
-- **No streaming.** Send compact JSON, with no images or HTML. All text is
-  rendered as plain text.
-- **Errors.** On `429`, the frontend reads `Retry-After`. A `404` or `5xx`
-  shows "AI isn't available right now" and falls back to normal results.
-  Keep error text generic.
+1. **Town scope.** `state` has `max_km` but no "my town only" or "other
+   towns" option. The inline Distance filter's "My town" and "Other towns"
+   choices currently only affect the browse feed. Could `state` carry a
+   community scope?
+2. **People.** Slim results don't include people. Search used to show
+   matching profiles via `users`. Optionally add a few, or confirm it's fine
+   without them.
+3. **Rate limits.** Make the per-IP anonymous allowance generous, since many
+   users share one connection, and count refine steps in it.
 
-## Backend rules we're asking for
+## 2. Assistant (`/api/assistant/session`, `/chat`, `/report`)
 
-1. The model and its keys stay on the server.
-2. The server owns the chat history and ignores any history the client
-   sends. Cap a chat at about 20 turns and 500 characters per message, and
-   expire sessions.
-3. The model returns listing ids only. Hydrate them from the database the
-   same way `_hydrate` does. A malformed id should fall back to keyword
-   search, not cause a 500.
-4. Treat listing and profile text (title, description, tags, bio, contact)
-   as untrusted input that may contain prompt injections. Fence it, strip
-   URLs, and use structured output. Give the model only read-only, bounded
-   tools.
-5. Never pass the model emails, password hashes or exact coordinates.
-6. Add rate limits per user and per IP, plus a daily spend cap. Return `429`
-   with `Retry-After` when they're hit.
-7. Cap `q` at 200 characters (about 8 words), and escape `%` and `_` in
-   `keyword_filter`.
-8. Make `SEARCH_SERVICE_KEY` required on `/api/search/corpus`, and compare it
-   with `hmac.compare_digest`.
-9. Replace `allow_origins=["*"]` with a list of allowed origins.
+The frontend is wired to the routes you built, but the "Ask Banyan" button is
+hidden by default to keep the screen minimal. Set `VITE_ENABLE_ASSISTANT=1`
+to show it.
 
-## Optional, makes the frontend better
+Session errors:
 
-- Add `image_size_kb` (or a byte count) next to `image` and `photo`. The
-  frontend currently sends a HEAD request to learn each photo's size before
-  showing "Load image".
-- Add an `exchange` filter on `GET /api/listings`. The frontend currently
-  filters exchange client-side, page by page.
-- Add `distance_km` to `/api/search` results when `lat`/`lng` are passed.
+- **`404` or `410`:** the frontend starts a new session and resends once.
+- **`409`:** shows "still answering".
+- **`429`:** shows "busy, try again in N seconds".
+
+## 3. Other changes the frontend now uses
+
+- **`/api/communities` `lat`/`lng`.** Distances are measured from town
+  centres, and the frontend no longer fetches `/api/users?limit=200`.
+- **`client_id` on `POST /api/listings`.** Offline-queued posts are retried
+  safely.
+- **`image_size_kb` on listings and cards.** Shown on the "Load image"
+  button, so no HEAD request is needed.
