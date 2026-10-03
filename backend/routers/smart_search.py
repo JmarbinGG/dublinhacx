@@ -29,8 +29,10 @@ The model never decides what's real: it only produces search terms and
 filters, the DB query is ours, and every card is a row we just read.
 """
 
+import hashlib
 import json
 import logging
+import os
 import re
 import threading
 import time
@@ -58,6 +60,23 @@ from textutil import MAX_QUERY_CHARS, STOPWORDS, clip, strip_urls
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/search", tags=["search"])
+
+
+def _search_version() -> str:
+    """Changes whenever search behaviour can: the code that shapes results
+    or the models answering. Clients put it in their cache keys, so a
+    backend fix isn't hidden behind results cached before it."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    h = hashlib.sha256()
+    for path in (__file__, os.path.join(here, "listings.py"), os.path.join(here, "..", "categories.py"),
+                 os.path.join(here, "..", "llm.py"), os.path.join(here, "..", "textutil.py")):
+        with open(path, "rb") as f:
+            h.update(f.read())
+    h.update(f"{llm.big_model()}|{llm.small_model()}|{llm.configured()}".encode())
+    return h.hexdigest()[:10]
+
+
+SEARCH_VERSION = _search_version()
 
 DEFAULT_LIMIT = 12
 MAX_LIMIT = 24
@@ -170,6 +189,7 @@ class Suggestion(BaseModel):
 
 
 class SmartSearchResponse(BaseModel):
+    version: str  # SEARCH_VERSION - if it differs from what a cached copy has, refetch
     mode: Literal["simple", "complex"]
     engine: Literal["ai", "keyword"]  # "ai" if a model shaped this search
     ai: bool
@@ -808,6 +828,7 @@ def smart_search(
 
     cards, has_more = run_state(db, state, origin, body.limit, body.offset)
     return SmartSearchResponse(
+        version=SEARCH_VERSION,
         mode=state.mode,
         engine="ai" if used else "keyword",
         ai=used,

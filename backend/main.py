@@ -18,6 +18,7 @@ import categories
 from database import Base, SessionLocal, engine
 from models import Listing
 from routers import assistant, listings, search, smart_search, uploads, users
+from routers.smart_search import SEARCH_VERSION
 from storage import UPLOAD_DIR
 
 Base.metadata.create_all(bind=engine)
@@ -52,7 +53,7 @@ app.add_middleware(
     ),
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type", "Accept", "ngrok-skip-browser-warning"],
-    expose_headers=["Retry-After"],
+    expose_headers=["Retry-After", "X-Search-Version"],
 )
 
 # Low data use: compress every JSON response over ~0.5 KB (lists shrink 3-5x).
@@ -72,6 +73,8 @@ async def validation_errors(request: Request, exc: RequestValidationError):
 @app.middleware("http")
 async def nosniff_uploads(request: Request, call_next):
     response = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        response.headers["X-Search-Version"] = SEARCH_VERSION
     if request.url.path.startswith("/uploads/"):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Content-Security-Policy"] = "default-src 'none'; sandbox"
@@ -92,6 +95,15 @@ app.include_router(assistant.router)
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/api/meta")
+def meta():
+    """Fetch once per session. search_version changes whenever search
+    results could change (code or models): include it in client-side cache
+    keys so a backend fix shows up immediately instead of after the cache
+    expires."""
+    return {"search_version": SEARCH_VERSION}
 
 
 if __name__ == "__main__":
