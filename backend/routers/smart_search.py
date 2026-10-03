@@ -102,6 +102,9 @@ class SearchState(BaseModel):
     max_km: Optional[float] = Field(None, gt=0, le=500)
     need: Optional[str] = Field(None, max_length=120)  # complex mode: what the shopper is trying to do
     refinements: list[str] = []  # what the shopper typed to refine, oldest first
+    # Complex mode: listing ids the model judged actually relevant, best first.
+    # Results are limited to these; cleared when the search terms change.
+    picked: Optional[list[int]] = Field(None, max_length=40)
 
     @field_validator("terms", mode="before")
     @classmethod
@@ -218,9 +221,47 @@ def stem(word: str) -> str:
     return word
 
 
-def stem_phrase(term: str) -> str:
-    """Singular words, minus filler ("someone to repair" -> "repair"). "" if nothing's left."""
-    return " ".join(stem(w) for w in term.split() if w not in FILLER)
+def clean_phrase(term: str) -> str:
+    """A search term as shown to the user, minus filler ("someone to repair"
+    -> "repair"). "" if nothing's left. Stemming happens only when matching."""
+    return " ".join(w for w in term.split() if w not in FILLER)
+
+
+def unique_terms(terms: list[str]) -> list[str]:
+    """Drop terms that stem to one already listed ("mechanics" after "mechanic")."""
+    seen, out = set(), []
+    for t in terms:
+        key = " ".join(stem(w) for w in t.split())
+        if key not in seen:
+            seen.add(key)
+            out.append(t)
+    return out
+
+
+# Endings a listing word may add to a search stem and still count as the
+# same word: weld -> welding/welder, tire -> tires. Anything longer is a
+# different word (wheel -/-> wheelbarrow, rim -/-> trimming).
+WORD_ENDINGS = {"", "s", "es", "e", "ed", "er", "ers", "ing", "ings"}
+# Spelling variants that should find each other.
+VARIANTS = {
+    "tire": "tyre", "tyre": "tire", "plow": "plough", "plough": "plow", "color": "colour",
+    "colour": "color", "aluminum": "aluminium", "aluminium": "aluminum", "mold": "mould",
+    "mould": "mold", "gray": "grey", "grey": "gray", "meter": "metre", "metre": "meter",
+    "fiber": "fibre", "fibre": "fiber", "jewelry": "jewellery", "jewellery": "jewelry",
+}
+
+
+def word_forms(w: str) -> list[str]:
+    return [w, VARIANTS[w]] if w in VARIANTS else [w]
+
+
+def words_of(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", (text or "").lower())
+
+
+def word_hit(w: str, tokens: list[str]) -> bool:
+    """Does any listing word count as the search word `w` (a stem)?"""
+    return any(t.startswith(f) and t[len(f):] in WORD_ENDINGS for f in word_forms(w) for t in tokens)
 
 
 def looks_simple(q: str) -> bool:
@@ -435,7 +476,7 @@ def new_search(db: DbSession, q: str, models: _ModelBudget) -> tuple[SearchState
         return SearchState.model_validate(hit), True
 
     changes, leftover = parse_rules(q, initial=True)
-    stems = [stem(w) for w in leftover]
+    stems = unique_terms(leftover)  # the query's meaningful words
     # Simple: the leftover words are one thing ("pump set"). Complex without a
     # model: each meaningful word is searched separately.
     rule_state = apply_changes(SearchState(q=q, terms=[" ".join(stems[:3])] if stems else [q.lower()]), changes)
@@ -452,7 +493,7 @@ def new_search(db: DbSession, q: str, models: _ModelBudget) -> tuple[SearchState
     if route is not None:
         used = True
         if route.mode == "simple":
-            terms = [p for t in _clean_word_list(route.terms, 4, 40) if (p := stem_phrase(t))] or rule_state.terms
+            terms = [p for t in _clean_word_list(route.terms, 4, 40) if (p := clean_phrase(t))] or rule_state.terms
             state = rule_state.model_copy(update={"terms": terms})
     complex_ = route.mode == "complex" if route is not None else len(stems) > 1
 
@@ -481,8 +522,8 @@ def expand_search(db: DbSession, q: str, base: SearchState, models: _ModelBudget
     if (expand is None or not expand.terms) and llm.small_model() != llm.big_model():
         expand = models.call(messages, _Expand, SMALL_TIMEOUT_S, llm.small_model())
         models.degraded = True  # small model's guess: fine to show, not to cache
-    terms = [p for t in _clean_word_list(expand.terms, 6, 40) if (p := stem_phrase(t))] if expand else []
-    terms = list(dict.fromkeys(terms))  # "mechanics" and "mechanic" both stem to one
+    terms = [p for t in _clean_word_list(expand.terms, 6, 40) if (p := clean_phrase(t))] if expand else []
+    terms = unique_terms(terms)
     if not terms:
         return None
     return base.model_copy(update={"mode": "complex", "terms": terms,
@@ -513,7 +554,7 @@ def refine_search(state: SearchState, text: str, models: _ModelBudget) -> tuple[
 
     model_changes = {k: v for k, v in out.model_dump(exclude_unset=True).items() if v is not None}
     if "terms" in model_changes:
-        model_changes["terms"] = [p for t in _clean_word_list(model_changes["terms"], MAX_TERMS, 40) if (p := stem_phrase(t))] or state.terms
+        model_changes["terms"] = unique_terms([p for t in _clean_word_list(model_changes["terms"], MAX_TERMS, 40) if (p := clean_phrase(t))]) or state.terms
     model_changes.update({k: v for k, v in changes.items() if k != "add_attrs"})  # rules win on what they parsed
     if changes.get("add_attrs"):
         model_changes["attrs"] = list(dict.fromkeys((model_changes.get("attrs") or state.attrs) + changes["add_attrs"]))
@@ -551,9 +592,11 @@ def run_state(
 
     terms = state.terms or state.attrs or [state.q.lower()]
     term_words = [[stem(w) for w in t.split() if w not in STOPWORDS] or [stem(t)] for t in terms]
-    words = {w for ws in term_words for w in ws}
+    words = {f for ws in term_words for w in ws for f in word_forms(w)}
+    if state.picked is not None:
+        query = query.filter(Listing.id.in_(state.picked or [-1]))
     rows = (
-        query.filter(or_(*[_word_clause(w) for w in words]))
+        query.filter(or_(*[_word_clause(w) for w in words]))  # broad DB prefilter; whole words checked below
         .order_by(Listing.created_at.desc(), Listing.id.desc())
         .limit(CANDIDATE_CAP)
         .all()
@@ -561,14 +604,15 @@ def run_state(
 
     scored = []
     for l in rows:
-        title, tags = (l.title or "").lower(), (l.tags or "").lower()
-        rest = f"{l.category or ''} {l.description or ''} {l.owner.community or ''}".lower()
-        hay = f"{title} {tags} {rest}"
+        title, tags = words_of(l.title), words_of(l.tags)
+        rest = words_of(f"{l.category or ''} {l.description or ''} {l.owner.community or ''}")
+        hay = title + tags + rest
         score, match, full, others = 0.0, None, False, 0.0
         for term, ws in zip(terms, term_words):
             # Every word of the term found = full score; some = partial.
-            s = sum(3 if w in title else 2 if w in tags else 1 if w in rest else 0 for w in ws) / len(ws)
-            is_full = all(w in hay for w in ws)
+            s = sum(3 if word_hit(w, title) else 2 if word_hit(w, tags) else 1 if word_hit(w, rest) else 0
+                    for w in ws) / len(ws)
+            is_full = all(word_hit(w, hay) for w in ws)
             others += s
             if (is_full, s) > (full, score):
                 score, match, full = s, term, is_full
@@ -577,7 +621,7 @@ def run_state(
         if state.mode == "simple":
             # "tractor" + "repair": a listing with both beats one with either.
             score += 0.5 * (others - score)
-        score += sum(0.5 for a in state.attrs if a in hay)
+        score += sum(0.5 for a in state.attrs if all(word_hit(stem(w), hay) for w in a.split()))
         if state.qty:
             have = _listing_qty(l.quantity)
             score += 1 if have is not None and have >= state.qty else -1.5 if have is not None else 0
@@ -593,7 +637,11 @@ def run_state(
     keep = [(s, l, m) for s, l, m in scored if l.id in dist]
     keep.sort(key=lambda x: (-x[0], dist[x[1].id] if dist[x[1].id] is not None else 1e9, -x[1].id))
 
-    if state.mode == "complex" and len(terms) > 1:
+    if state.picked is not None:
+        # The model's relevance order wins.
+        rank = {lid: i for i, lid in enumerate(state.picked)}
+        keep.sort(key=lambda x: rank.get(x[1].id, 1e9))
+    elif state.mode == "complex" and len(terms) > 1:
         # Round-robin across terms, so "axe, saw, rope" all show up near the top.
         buckets: dict[str, list] = {t: [] for t in terms}
         for item in keep:
@@ -647,6 +695,58 @@ def _suggestions(state: SearchState, origin: Optional[Community], empty: bool) -
     return _clean_suggestions(out)
 
 
+class _Picked(BaseModel):
+    ids: list[int] = Field(default=[], max_length=40)
+
+    @field_validator("ids", mode="before")
+    @classmethod
+    def _ids(cls, v):
+        out = []
+        for x in v if isinstance(v, list) else []:
+            try:
+                out.append(int(x))
+            except (TypeError, ValueError):
+                continue
+        return out
+
+
+RERANK_POOL = 25  # most candidates the model is asked to judge
+
+RERANK_PROMPT = """You check search results on Banyan, a site where neighbours in rural towns \
+share materials, lend tools and machinery, and offer skills or work.
+
+You get what the shopper wants and some listings that matched their keywords. Keywords \
+can match the wrong thing (a potter's wheel when they need car wheels, a wheelchair, a \
+welder when nothing needs welding). Keep only listings that would genuinely help with \
+what the shopper wants - an item they could use, or a person who could do the job.
+
+Return only JSON: {"ids": [ids of helpful listings, most helpful first]}
+Return {"ids": []} if none of them would help.
+
+""" + SAFETY_RULES
+
+
+def rerank(state: SearchState, candidates: list[Card], models: _ModelBudget) -> Optional[list[int]]:
+    """Ask the model which keyword matches really fit the goal. None if it
+    couldn't answer (then keyword results stand); [] means none fit."""
+    key = "rerank:" + " ".join(state.q.lower().split()) + "|" + ",".join(str(c.id) for c in candidates)
+    if (hit := _cached(key)) is not None:
+        return hit["ids"]
+    data = [{"id": c.id, "title": clip(strip_urls(c.title), 80), "type": c.type, "kind": c.kind} for c in candidates]
+    want = state.q + (f" (goal: {state.need})" if state.need else "")
+    out = models.call(
+        [{"role": "system", "content": RERANK_PROMPT},
+         {"role": "user", "content": f"Shopper wants:\n{fence(want)}\n\nListings:\n{fence(data)}"}],
+        _Picked, BIG_TIMEOUT_S, llm.big_model(),
+    )
+    if out is None:
+        return None
+    allowed = {c.id for c in candidates}
+    ids = list(dict.fromkeys(i for i in out.ids if i in allowed))
+    _store(key, {"ids": ids})
+    return ids
+
+
 @router.post("/smart", response_model=SmartSearchResponse, response_model_exclude_none=True)
 def smart_search(
     body: SmartSearchRequest,
@@ -660,26 +760,43 @@ def smart_search(
         origin = communities.resolve_any(db, name=user.community)
 
     models = _ModelBudget(request, user)
+    new_or_refined = body.state is None or bool(body.refine and body.refine.strip())
     if body.state is None:
         state, used = new_search(db, " ".join(body.q.split()), models)
     elif body.refine and body.refine.strip():
         state, used = refine_search(body.state, body.refine, models)
+        if state.terms != body.state.terms:
+            state = state.model_copy(update={"picked": None})  # new terms: judge relevance again
     else:
         state, used = body.state, False
 
     if state.max_km is not None and origin is None:
         state = state.model_copy(update={"max_km": None})  # nothing to measure from
-    cards, has_more = run_state(db, state, origin, body.limit, body.offset)
 
     # The small model called it simple but nothing matched (e.g. "start a
     # vegetable garden"): let the big model work out what's needed.
-    if not cards and body.state is None and used and state.mode == "simple" and not looks_simple(state.q):
-        expanded = expand_search(db, state.q, state, models)
-        if expanded is not None:
-            state = expanded
-            if not models.degraded:
-                _store("new:" + " ".join(state.q.lower().split()), state.model_dump())
-            cards, has_more = run_state(db, state, origin, body.limit, body.offset)
+    if body.state is None and used and state.mode == "simple" and not looks_simple(state.q):
+        if not run_state(db, state, origin, 1, 0)[0]:
+            expanded = expand_search(db, state.q, state, models)
+            if expanded is not None:
+                state = expanded
+
+    # Complex searches match many loosely related words (wheel -> potter's
+    # wheel): have the model keep only listings that actually help.
+    if new_or_refined and state.mode == "complex" and state.picked is None:
+        candidates, _ = run_state(db, state, origin, RERANK_POOL, 0)
+        if candidates:
+            picked = rerank(state, candidates, models)
+            if picked is not None:
+                state = state.model_copy(update={"picked": picked})
+                used = True
+
+    if body.state is None and used and not models.degraded:
+        # Without `picked`: those depend on the candidates (and so on the
+        # shopper's town); rerank has its own cache keyed by candidates.
+        _store("new:" + " ".join(state.q.lower().split()), state.model_dump(exclude={"picked"}))
+
+    cards, has_more = run_state(db, state, origin, body.limit, body.offset)
     return SmartSearchResponse(
         mode=state.mode,
         engine="ai" if used else "keyword",
