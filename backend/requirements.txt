@@ -7,4 +7,3 @@ email-validator
 python-multipart
 requests
 python-dotenv
-pillow

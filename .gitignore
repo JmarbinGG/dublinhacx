@@ -9,7 +9,6 @@ venv/
 
 # Local dev database
 listings.db
-marketplace.db
 
 # User-uploaded photos (runtime content, not source)
 backend/uploads/
@@ -21,5 +20,3 @@ dist/
 # Local env overrides
 .env
 .env.local
-
-# i love thomas
