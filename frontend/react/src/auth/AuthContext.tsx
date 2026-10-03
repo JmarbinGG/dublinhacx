@@ -1,6 +1,7 @@
-import { createContext, useContext, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import * as authApi from '../api/auth'
 import type { AuthUser } from '../api/auth'
+import { UNAUTHORIZED_EVENT } from '../api/client'
 
 const STORAGE_KEY = 'byproduct.auth'
 
@@ -30,33 +31,52 @@ type AuthContextValue = {
   token: string | null
   /** Throws ApiError on failure (e.g. "Invalid email or password"). */
   login: (email: string, password: string) => Promise<void>
-  /** Throws ApiError on failure (e.g. "Email already registered"). */
-  signup: (name: string, email: string, password: string) => Promise<void>
+  /** Throws ApiError on failure (e.g. a password under 8 characters). */
+  signup: (name: string, email: string, password: string, communityId: string | null) => Promise<void>
   logout: () => void
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [auth, setAuth] = useState<StoredAuth | null>(() => readStoredAuth())
+  const [auth, setAuthState] = useState<StoredAuth | null>(() => readStoredAuth())
+
+  function setAuth(value: StoredAuth | null) {
+    setAuthState(value)
+    writeStoredAuth(value)
+  }
+
+  // Any request that 401s with our token means the session is gone (expired,
+  // or the server restarted) - sign out instead of failing every request.
+  useEffect(() => {
+    const onUnauthorized = () => setAuth(null)
+    window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized)
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized)
+  }, [])
+
+  // Check a stored token once on load. A network failure (offline) keeps the
+  // session; a 401 clears it via the listener above.
+  const token = auth?.token ?? null
+  useEffect(() => {
+    if (!token) return
+    const controller = new AbortController()
+    authApi.me(token, controller.signal).catch(() => {})
+    return () => controller.abort()
+  }, [token])
 
   const value = useMemo<AuthContextValue>(
     () => ({
       user: auth?.user ?? null,
       token: auth?.token ?? null,
       async login(email, password) {
-        const response = await authApi.login(email, password)
-        setAuth(response)
-        writeStoredAuth(response)
+        setAuth(await authApi.login(email, password))
       },
-      async signup(name, email, password) {
-        const response = await authApi.signup(name, email, password)
-        setAuth(response)
-        writeStoredAuth(response)
+      async signup(name, email, password, communityId) {
+        setAuth(await authApi.signup(name, email, password, communityId))
       },
       logout() {
+        if (auth?.token) authApi.logout(auth.token).catch(() => {})
         setAuth(null)
-        writeStoredAuth(null)
       },
     }),
     [auth],

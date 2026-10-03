@@ -24,7 +24,12 @@ export const API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL ?? defaultApiBase()
 ).replace(/\/$/, '')
 
-/** An HTTP or network failure, carrying the status code when we have one. */
+/** Fired when a request carrying a token comes back 401 - the session
+ * expired or the server restarted. AuthContext listens and signs out. */
+export const UNAUTHORIZED_EVENT = 'byproduct:unauthorized'
+
+/** An HTTP or network failure. `status` is undefined for network failures
+ * (offline, server down) - callers use that to fall back to cached data. */
 export class ApiError extends Error {
   status?: number
 
@@ -35,12 +40,26 @@ export class ApiError extends Error {
   }
 }
 
-/** FastAPI's HTTPException body is `{ "detail": "..." }` - surface that when present. */
+export function isNetworkError(error: unknown): boolean {
+  return error instanceof ApiError && error.status === undefined
+}
+
+/** Uploaded photos come back API-relative ("/uploads/abc.jpg"); seed images
+ * are absolute URLs. Either way, make it usable in <img src>. */
+export function resolveImageUrl(path: string): string {
+  return /^https?:\/\//.test(path) ? path : `${API_BASE_URL}${path}`
+}
+
+/** FastAPI errors are `{ "detail": "..." }`, or a list of validation errors. */
 async function errorMessage(response: Response): Promise<string> {
   try {
     const body: unknown = await response.json()
-    if (body && typeof body === 'object' && typeof (body as { detail?: unknown }).detail === 'string') {
-      return (body as { detail: string }).detail
+    const detail = (body as { detail?: unknown } | null)?.detail
+    if (typeof detail === 'string') return detail
+    if (Array.isArray(detail) && detail.length > 0) {
+      const first = detail[0] as { loc?: unknown[]; msg?: string }
+      const field = first.loc?.[first.loc.length - 1]
+      return field ? `${String(field).replace(/_/g, ' ')}: ${first.msg}` : String(first.msg)
     }
   } catch {
     // Body wasn't JSON - fall through to the generic message below.
@@ -50,26 +69,18 @@ async function errorMessage(response: Response): Promise<string> {
     : `The API returned ${response.status} ${response.statusText}.`
 }
 
-/** Adds `Authorization: Bearer <token>` when a token is given - every helper
- * below takes an optional token as its last argument for this. */
-function authHeaders(token?: string | null): Record<string, string> {
-  return token ? { Authorization: `Bearer ${token}` } : {}
+type RequestOptions = {
+  method?: 'GET' | 'POST' | 'DELETE'
+  params?: Record<string, string | number | undefined | null>
+  json?: unknown
+  form?: FormData
+  token?: string | null
+  signal?: AbortSignal
 }
 
-/**
- * GET `path` and parse the JSON body.
- *
- * @param path   Path relative to API_BASE_URL, e.g. `/api/listings`.
- * @param params Query params. Null/undefined/empty values are dropped.
- * @param signal Abort signal, so stale requests can be cancelled.
- * @param token  Bearer token, for routes that require or vary by identity.
- */
-export async function getJSON<T>(
-  path: string,
-  params?: Record<string, string | number | undefined | null>,
-  signal?: AbortSignal,
-  token?: string | null,
-): Promise<T> {
+export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const { method = 'GET', params, json, form, token, signal } = options
+
   const url = new URL(`${API_BASE_URL}${path}`)
   for (const [key, value] of Object.entries(params ?? {})) {
     if (value !== undefined && value !== null && value !== '') {
@@ -77,134 +88,40 @@ export async function getJSON<T>(
     }
   }
 
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    'ngrok-skip-browser-warning': 'true',
+  }
+  if (token) headers.Authorization = `Bearer ${token}`
+  // FormData bodies get their multipart Content-Type (with boundary) from the browser.
+  if (json !== undefined) headers['Content-Type'] = 'application/json'
+
   let response: Response
   try {
     response = await fetch(url, {
+      method,
+      headers,
       signal,
-      headers: {
-        Accept: 'application/json',
-        'ngrok-skip-browser-warning': 'true',
-        ...authHeaders(token),
-      },
+      body: form ?? (json !== undefined ? JSON.stringify(json) : undefined),
     })
   } catch (error) {
     // AbortError means we cancelled on purpose - let callers ignore it.
     if (error instanceof DOMException && error.name === 'AbortError') throw error
     throw new ApiError(
-      `Could not reach the API at ${API_BASE_URL}. Is the backend running?`,
+      navigator.onLine
+        ? `Could not reach the server at ${API_BASE_URL}.`
+        : "You're offline.",
     )
   }
 
-  if (!response.ok) throw new ApiError(await errorMessage(response), response.status)
+  if (!response.ok) {
+    if (response.status === 401 && token) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT))
+    throw new ApiError(await errorMessage(response), response.status)
+  }
 
   try {
     return (await response.json()) as T
   } catch {
-    throw new ApiError('The API returned a response that was not valid JSON.')
-  }
-}
-
-/**
- * POST `path` with a FormData body (file uploads) and parse the JSON
- * response. No Content-Type header is set - the browser fills in the
- * multipart boundary itself.
- *
- * @param path Path relative to API_BASE_URL, e.g. `/api/analyze`.
- * @param body FormData, e.g. containing a File under an `image` field.
- */
-export async function postForm<T>(
-  path: string,
-  body: FormData,
-  signal?: AbortSignal,
-): Promise<T> {
-  let response: Response
-  try {
-    response = await fetch(`${API_BASE_URL}${path}`, {
-      method: 'POST',
-      headers: { Accept: 'application/json', 'ngrok-skip-browser-warning': 'true' },
-      body,
-      signal,
-    })
-  } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') throw error
-    throw new ApiError(
-      `Could not reach the API at ${API_BASE_URL}. Is the backend running?`,
-    )
-  }
-
-  if (!response.ok) throw new ApiError(await errorMessage(response), response.status)
-
-  try {
-    return (await response.json()) as T
-  } catch {
-    throw new ApiError('The API returned a response that was not valid JSON.')
-  }
-}
-
-/**
- * POST `path` with a JSON body and parse the JSON response.
- *
- * @param path  Path relative to API_BASE_URL, e.g. `/api/login`.
- * @param body  Request body, sent as JSON.
- * @param token Bearer token, e.g. to attribute a created listing to a user.
- */
-export async function postJSON<T>(path: string, body: unknown, token?: string | null): Promise<T> {
-  let response: Response
-  try {
-    response = await fetch(`${API_BASE_URL}${path}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        'ngrok-skip-browser-warning': 'true',
-        ...authHeaders(token),
-      },
-      body: JSON.stringify(body),
-    })
-  } catch {
-    throw new ApiError(
-      `Could not reach the API at ${API_BASE_URL}. Is the backend running?`,
-    )
-  }
-
-  if (!response.ok) throw new ApiError(await errorMessage(response), response.status)
-
-  try {
-    return (await response.json()) as T
-  } catch {
-    throw new ApiError('The API returned a response that was not valid JSON.')
-  }
-}
-
-/**
- * DELETE `path` and parse the JSON response. Always needs a token - every
- * route that accepts DELETE requires a signed-in owner.
- *
- * @param path  Path relative to API_BASE_URL, e.g. `/api/listings/5`.
- * @param token Bearer token identifying who's asking.
- */
-export async function deleteJSON<T>(path: string, token: string): Promise<T> {
-  let response: Response
-  try {
-    response = await fetch(`${API_BASE_URL}${path}`, {
-      method: 'DELETE',
-      headers: {
-        Accept: 'application/json',
-        'ngrok-skip-browser-warning': 'true',
-        ...authHeaders(token),
-      },
-    })
-  } catch {
-    throw new ApiError(
-      `Could not reach the API at ${API_BASE_URL}. Is the backend running?`,
-    )
-  }
-
-  if (!response.ok) throw new ApiError(await errorMessage(response), response.status)
-
-  try {
-    return (await response.json()) as T
-  } catch {
-    throw new ApiError('The API returned a response that was not valid JSON.')
+    throw new ApiError('The server returned a response that was not valid JSON.')
   }
 }

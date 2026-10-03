@@ -18,11 +18,13 @@ DEFAULT_MODEL = "meta/llama-3.2-11b-vision-instruct"
 _CATEGORY_LIST = ", ".join(CATEGORIES)
 
 PROMPT = (
-    "You are labeling a photo of waste or surplus material for a B2B reuse "
-    "marketplace. Look at the image and respond with ONLY a JSON object, no "
-    "other text, no markdown fences, in exactly this shape:\n"
-    '{"name": "short, specific listing title, e.g. \'Oak Pallet Offcuts\'", '
+    "You are labeling a photo for a rural community marketplace where "
+    "neighbors trade produce, seeds, heavy tools/equipment, skills and "
+    "services, and general goods. Look at the image and respond with ONLY a "
+    "JSON object, no other text, no markdown fences, in exactly this shape:\n"
+    '{"name": "short, specific listing title, e.g. \'Heirloom Bean Seeds\'", '
     f'"category": "exactly one of: {_CATEGORY_LIST}", '
+    '"description": "one or two short plain sentences a buyer would want to know", '
     '"tags": ["keyword", "keyword"], '
     '"quantity": "your best rough visual estimate, e.g. \'~15 pieces\' or \'1 pallet\'"}\n\n'
     "Rules:\n"
@@ -90,7 +92,7 @@ def _parse(content: str) -> AnalysisResult:
     if not match:
         return AnalysisResult(
             name="Unidentified Materials",
-            category="construction",
+            category="general",
             tags=["unsorted"],
             quantity="1 unit (please adjust)",
             confidence=0.0,
@@ -101,7 +103,7 @@ def _parse(content: str) -> AnalysisResult:
     except json.JSONDecodeError:
         return AnalysisResult(
             name="Unidentified Materials",
-            category="construction",
+            category="general",
             tags=["unsorted"],
             quantity="1 unit (please adjust)",
             confidence=0.0,
@@ -109,7 +111,7 @@ def _parse(content: str) -> AnalysisResult:
 
     category = str(data.get("category") or "").strip().lower()
     if category not in CATEGORIES:
-        category = "construction"
+        category = "general"
 
     return AnalysisResult(
         name=data.get("name") or "Unidentified Materials",
@@ -117,4 +119,5 @@ def _parse(content: str) -> AnalysisResult:
         tags=data.get("tags") or ["unsorted"],
         quantity=data.get("quantity") or "1 unit (please adjust)",
         confidence=1.0,
+        description=str(data.get("description") or ""),
     )

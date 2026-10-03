@@ -8,7 +8,7 @@ class MockClassifier:
     def analyze(self, image_bytes: bytes) -> AnalysisResult:
         return AnalysisResult(
             name="Unidentified Materials",
-            category="construction",
+            category="general",
             tags=["unsorted"],
             quantity="1 unit (please adjust)",
             confidence=0.0,

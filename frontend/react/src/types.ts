@@ -1,24 +1,45 @@
-/**
- * A listing row, mirroring the SQLAlchemy `Listing` model in backend/main.py.
- *
- * Only `id` and `name` are guaranteed - every other column is nullable, and the
- * UI hides fields that are missing. Columns added to the backend later show up
- * automatically in the detail view via the index signature.
- *
- * `quantity` is a String column on the backend, but accept a number too in case
- * that changes.
- */
-export type Listing = {
-  id: string | number
+/** Mirrors backend/main.py's ItemOut / ItemDetail / CommunityOut schemas. */
+
+export const CATEGORIES = [
+  { id: 'produce', label: 'Produce', blurb: 'Eggs, honey, bulk grain, seasonal crops' },
+  { id: 'seeds', label: 'Seeds', blurb: 'Heirloom and open-pollinated seed stock' },
+  { id: 'heavy_tools', label: 'Heavy Tools', blurb: 'Tractors, balers, splitters, excavators' },
+  { id: 'skills_services', label: 'Skills & Services', blurb: 'Farriers, welders, sawyers, builders' },
+  { id: 'general', label: 'General', blurb: 'Firewood, reclaimed materials, everything else' },
+] as const
+
+export type Category = (typeof CATEGORIES)[number]['id']
+
+/** The categories worth a drive - things a next-door neighbor rarely has. */
+export const SPECIALIZED_CATEGORIES: readonly Category[] = ['seeds', 'heavy_tools', 'skills_services']
+
+export function categoryLabel(id: string): string {
+  return CATEGORIES.find((category) => category.id === id)?.label ?? id
+}
+
+export type Community = {
+  id: string
   name: string
-  image?: string | null
-  owner?: string | null
-  location?: string | null
-  quantity?: string | number | null
-  email?: string | null
-  mailtolink?: string | null
+  lat: number
+  lng: number
+  approximate_population?: number | null
+}
+
+export type Item = {
+  id: string
+  community_id: string
+  category: Category
+  title: string
+  description?: string | null
+  price_or_exchange?: string | null
+  image_url?: string | null
+  image_size_kb?: number | null
+  created_at: string
+  quantity?: string | null
+  tags?: string | null
   status?: string | null
-  category?: string | null
+  owner?: string | null
   owner_id?: number | null
-  [extraColumn: string]: unknown
+  /** Only present on the detail endpoint, and only for signed-in viewers. */
+  contact_email?: string | null
 }

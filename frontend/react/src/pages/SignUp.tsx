@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { useCommunities } from '../context/CommunityContext'
 
 export default function SignUp() {
   const [name, setName] = useState('')
@@ -9,6 +10,7 @@ export default function SignUp() {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const { signup } = useAuth()
+  const { communities, home, setHomeId } = useCommunities()
   const navigate = useNavigate()
 
   async function handleSubmit(event: React.FormEvent) {
@@ -16,7 +18,7 @@ export default function SignUp() {
     setError(null)
     setSubmitting(true)
     try {
-      await signup(name, email, password)
+      await signup(name, email, password, home?.id ?? null)
       navigate('/app')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong.')
@@ -30,14 +32,14 @@ export default function SignUp() {
       <div className="auth-pitch">
         <h2>Why byproduct.?</h2>
         <p>
-          Every year, businesses throw out truckloads of usable material - cardboard, scrap
-          metal, pallets, surplus inventory - simply because they don't know who could use it.
-          byproduct. exists to close that gap.
+          Your neighbor two miles away probably doesn't have a hay baler, heirloom seed corn
+          or a farrier. Someone twelve miles away might. byproduct. connects nearby rural
+          communities so specialized goods and skills find the people who need them.
         </p>
         <ul>
-          <li>Give surplus materials a second life instead of a landfill</li>
-          <li>Connect businesses directly - no broker, no middleman fees</li>
-          <li>Make listing a byproduct as easy as listing anything else for sale</li>
+          <li>Find specialized trade beyond walking distance</li>
+          <li>Trade directly - cash or barter, no middleman fees</li>
+          <li>Built for slow connections: text first, photos only when you ask</li>
         </ul>
       </div>
 
@@ -75,11 +77,28 @@ export default function SignUp() {
               id="signup-password"
               type="password"
               required
-              minLength={6}
+              minLength={8}
+              maxLength={72}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               autoComplete="new-password"
             />
+          </div>
+
+          <div className="form-field">
+            <label htmlFor="signup-community">Your community</label>
+            <select
+              id="signup-community"
+              value={home?.id ?? ''}
+              onChange={(event) => setHomeId(event.target.value)}
+            >
+              <option value="">Choose where you are</option>
+              {communities.map((community) => (
+                <option key={community.id} value={community.id}>
+                  {community.name}
+                </option>
+              ))}
+            </select>
           </div>
 
           {error && (

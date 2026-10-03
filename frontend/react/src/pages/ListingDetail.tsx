@@ -1,42 +1,18 @@
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useAuth } from '../auth/AuthContext'
+import DataBudgetImage from '../components/DataBudgetImage'
 import { ErrorState, Loading } from '../components/States'
-import { useListing } from '../hooks/useListings'
-import type { Listing } from '../types'
-
-/** Columns rendered explicitly below, so they are not repeated as "extra". */
-const HANDLED_FIELDS = new Set([
-  'id',
-  'name',
-  'image',
-  'email',
-  'mailtolink',
-  'owner',
-  'location',
-  'quantity',
-  'category',
-  'status',
-])
-
-/** Any column the backend adds later still shows up, as a plain label/value row. */
-function extraFields(listing: Listing) {
-  return Object.entries(listing).filter(
-    ([key, value]) =>
-      !HANDLED_FIELDS.has(key) &&
-      value !== null &&
-      value !== undefined &&
-      value !== '' &&
-      typeof value !== 'object',
-  )
-}
-
-function humanize(key: string) {
-  return key.replace(/[_-]/g, ' ').replace(/^./, (c) => c.toUpperCase())
-}
+import { useCommunities } from '../context/CommunityContext'
+import { useItem } from '../hooks/useItems'
+import { timeAgo } from '../lib/geo'
+import { categoryLabel } from '../types'
 
 export default function ListingDetail() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
-  const { data: listing, loading, error } = useListing(id)
+  const { user, token } = useAuth()
+  const { describeDistance } = useCommunities()
+  const { data: item, loading, error, cachedAt } = useItem(id, token)
 
   const backButton = (
     <button type="button" className="back" onClick={() => navigate(-1)}>
@@ -53,7 +29,7 @@ export default function ListingDetail() {
     )
   }
 
-  if (error || !listing) {
+  if (error || !item) {
     return (
       <section>
         {backButton}
@@ -63,45 +39,77 @@ export default function ListingDetail() {
     )
   }
 
-  // Prefer the backend's prepared mailto link, fall back to the raw email.
-  const contactHref =
-    listing.mailtolink ?? (listing.email ? `mailto:${listing.email}` : null)
+  const distance = describeDistance(item.community_id)
+  const isMine = user != null && item.owner_id === user.id
+  // Built here from the email alone (never a stored link), so the href can
+  // only ever be a mailto:.
+  const mailto = item.contact_email
+    ? `mailto:${encodeURIComponent(item.contact_email)}?subject=${encodeURIComponent(`byproduct.: ${item.title}`)}`
+    : null
 
-  const rows: [string, string][] = [
-    ['Owner', listing.owner],
-    ['Location', listing.location],
-    ['Category', listing.category],
-    ['Status', listing.status],
-    ['Quantity', listing.quantity ? String(listing.quantity) : null],
-    ['Email', listing.email],
+  const rows: [string, string | null | undefined][] = [
+    ['Price / exchange', item.price_or_exchange],
+    ['Quantity', item.quantity],
+    ['Posted by', item.owner],
+    ['Posted', timeAgo(item.created_at)],
+    ['Tags', item.tags?.split(',').join(', ')],
   ]
-    .filter((row): row is [string, string] => Boolean(row[1]))
-    .concat(extraFields(listing).map(([key, value]) => [humanize(key), String(value)]))
 
   return (
     <section className="detail">
       {backButton}
 
-      <h1>{listing.name}</h1>
+      <div className="market-card__badges">
+        <span className={`badge badge--${item.category}`}>{categoryLabel(item.category)}</span>
+        <span className={`distance-badge distance-badge--${distance.tone}`}>{distance.text}</span>
+      </div>
+      <h1>{item.title}</h1>
+      {item.description && <p className="detail-desc">{item.description}</p>}
 
-      {listing.image && (
-        <img className="detail-image" src={listing.image} alt={listing.name} />
+      {item.image_url && (
+        <div className="detail-image">
+          <DataBudgetImage src={item.image_url} sizeKb={item.image_size_kb} alt={item.title} />
+        </div>
       )}
 
       <dl className="detail-fields">
-        {rows.map(([label, value]) => (
-          <div key={label} className="detail-row">
-            <dt>{label}</dt>
-            <dd>{value}</dd>
-          </div>
-        ))}
+        {rows
+          .filter((row): row is [string, string] => Boolean(row[1]))
+          .map(([label, value]) => (
+            <div key={label} className="detail-row">
+              <dt>{label}</dt>
+              <dd>{value}</dd>
+            </div>
+          ))}
       </dl>
 
-      {contactHref && (
-        <a className="primary-button" href={contactHref}>
-          Contact owner
-        </a>
-      )}
+      <div id="connect" className="connect-box">
+        {isMine ? (
+          <p>This is your listing.</p>
+        ) : !user ? (
+          <>
+            <p>Sign in to see contact details and make an offer.</p>
+            <Link to="/signin" className="primary-button">
+              Sign in to connect
+            </Link>
+          </>
+        ) : cachedAt ? (
+          <p>You're offline - contact details will show when you reconnect.</p>
+        ) : mailto ? (
+          <>
+            <p>
+              Reach out to {item.owner ?? 'the owner'} to ask a question, offer cash or propose a
+              trade.
+            </p>
+            <a className="primary-button" href={mailto}>
+              Connect / Offer
+            </a>
+            <p className="connect-box__email">{item.contact_email}</p>
+          </>
+        ) : (
+          <p>The owner didn't leave contact details.</p>
+        )}
+      </div>
     </section>
   )
 }

@@ -1,44 +1,34 @@
 import { Link } from 'react-router-dom'
-import { ErrorState, Loading } from './States'
-import type { Listing } from '../types'
+import { NEARBY_MILES, useCommunities } from '../context/CommunityContext'
+import { SPECIALIZED_CATEGORIES, type Item } from '../types'
 
-type Props = {
-  listings: Listing[] | null
-  loading: boolean
-  error: string | null
-}
+/** A small row of numbers about the marketplace, relative to your community. */
+export default function Stats({ items }: { items: Item[] }) {
+  const { communities, home, distanceTo } = useCommunities()
 
-/**
- * Small aggregate numbers computed from the full listings set - replaces the
- * home page's old always-visible listings grid (browsing now happens via the
- * Browse button, at /search).
- */
-export default function Stats({ listings, loading, error }: Props) {
-  if (loading) return <Loading label="Loading stats..." />
-  if (error) return <ErrorState message={error} />
-
-  const rows = listings ?? []
-  const available = rows.filter((row) => row.status === 'available').length
-  const categories = new Set(rows.map((row) => row.category).filter(Boolean)).size
+  const beyondNearby = items.filter((item) => (distanceTo(item.community_id) ?? 0) > NEARBY_MILES)
+  const specializedBeyond = beyondNearby.filter((item) =>
+    SPECIALIZED_CATEGORIES.includes(item.category),
+  ).length
 
   return (
     <section className="stats-panel">
-      <h2>Marketplace Stats</h2>
-      {/* Total/Available link to /search; Categories has its own page now
-          since "explore this number further" means different places. */}
+      <h2>Across the region</h2>
       <div className="stat-cards">
         <Link to="/search" className="stat-card">
-          <span className="stat-value">{rows.length}</span>
-          <span className="stat-label">Total listings</span>
+          <span className="stat-value">{items.length}</span>
+          <span className="stat-label">Listings</span>
         </Link>
         <Link to="/search" className="stat-card">
-          <span className="stat-value">{available}</span>
-          <span className="stat-label">Available now</span>
+          <span className="stat-value">{communities.length}</span>
+          <span className="stat-label">Communities</span>
         </Link>
-        <Link to="/categories" className="stat-card">
-          <span className="stat-value">{categories}</span>
-          <span className="stat-label">Categories</span>
-        </Link>
+        {home && (
+          <Link to="/search?band=beyond5&special=1" className="stat-card">
+            <span className="stat-value">{specializedBeyond}</span>
+            <span className="stat-label">Specialized finds beyond {NEARBY_MILES} mi</span>
+          </Link>
+        )}
       </div>
     </section>
   )

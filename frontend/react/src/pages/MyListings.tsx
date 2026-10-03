@@ -1,32 +1,46 @@
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
-import { deleteListing } from '../api/listings'
+import { useEffect, useState } from 'react'
+import { Link, useLocation } from 'react-router-dom'
+import { deleteItem } from '../api/items'
 import { useAuth } from '../auth/AuthContext'
+import RuralMarketCard from '../components/RuralMarketCard'
 import { Empty, ErrorState, Loading } from '../components/States'
-import { useMyListings } from '../hooks/useListings'
-import type { Listing } from '../types'
+import { useMyItems } from '../hooks/useItems'
+import { QUEUE_CHANGED_EVENT, discardQueued, readQueue } from '../offline/syncQueue'
+import { categoryLabel, type Item } from '../types'
 
-/** /my-listings - what the signed-in user has posted, with delete. */
+function useQueue() {
+  const [queue, setQueue] = useState(() => readQueue())
+  useEffect(() => {
+    const update = () => setQueue(readQueue())
+    window.addEventListener(QUEUE_CHANGED_EVENT, update)
+    return () => window.removeEventListener(QUEUE_CHANGED_EVENT, update)
+  }, [])
+  return queue
+}
+
+/** /my-listings - what the signed-in user has posted, plus anything still
+ * waiting to sync from offline. */
 export default function MyListings() {
   const { user, token } = useAuth()
-  const { data, loading, error } = useMyListings(token)
-  const [listings, setListings] = useState<Listing[] | null>(null)
+  const queue = useQueue()
+  const location = useLocation()
+  // Refetch whenever the queue changes, so freshly synced listings appear.
+  const { data, loading, error } = useMyItems(token, queue.length)
+  const [deleted, setDeleted] = useState<Set<string>>(() => new Set())
   const [deleteError, setDeleteError] = useState<string | null>(null)
-  const [deletingId, setDeletingId] = useState<string | number | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
-  // Local copy so a delete can remove a row immediately without refetching -
-  // resynced whenever a fresh fetch comes in.
-  const visible = listings ?? data
+  const visible = (data ?? []).filter((item) => !deleted.has(item.id))
 
-  async function handleDelete(id: string | number) {
+  async function handleDelete(item: Item) {
     if (!token) return
-    if (!window.confirm('Delete this listing? This cannot be undone.')) return
+    if (!window.confirm(`Delete "${item.title}"? This cannot be undone.`)) return
 
     setDeleteError(null)
-    setDeletingId(id)
+    setDeletingId(item.id)
     try {
-      await deleteListing(id, token)
-      setListings((visible ?? []).filter((listing) => listing.id !== id))
+      await deleteItem(item.id, token)
+      setDeleted(new Set(deleted).add(item.id))
     } catch (err) {
       setDeleteError(err instanceof Error ? err.message : 'Could not delete this listing.')
     } finally {
@@ -50,9 +64,41 @@ export default function MyListings() {
 
   return (
     <section>
+      {(location.state as { queued?: boolean } | null)?.queued && queue.length > 0 && (
+        <p className="cached-note">
+          You're offline, so your listing was saved on this device. It will post automatically
+          when you reconnect.
+        </p>
+      )}
+
+      {queue.length > 0 && (
+        <>
+          <h2 className="results-heading">
+            Waiting to sync <span className="count">{queue.length}</span>
+          </h2>
+          <ul className="queue-list">
+            {queue.map((entry) => (
+              <li key={entry.client_id} className="queue-item">
+                <span>
+                  <strong>{entry.item.title}</strong> · {categoryLabel(entry.item.category)}
+                  {entry.error && <span className="queue-item__error"> - rejected: {entry.error}</span>}
+                </span>
+                <button
+                  type="button"
+                  className="link-button"
+                  onClick={() => discardQueued(entry.client_id)}
+                >
+                  Discard
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
       <h2 className="results-heading">
         My Listings
-        {!loading && !error && visible && <span className="count">{visible.length}</span>}
+        {!loading && !error && <span className="count">{visible.length}</span>}
       </h2>
 
       {loading && <Loading label="Loading your listings..." />}
@@ -62,36 +108,25 @@ export default function MyListings() {
           {deleteError}
         </p>
       )}
-      {!loading && !error && (!visible || visible.length === 0) && (
-        <Empty message="You haven't posted anything yet." />
-      )}
+      {!loading && !error && visible.length === 0 && <Empty message="You haven't posted anything yet." />}
 
-      {!loading && !error && visible && visible.length > 0 && (
+      {!loading && !error && visible.length > 0 && (
         <div className="grid">
-          {visible.map((listing) => (
-            <div key={String(listing.id)} className="card my-listing-card">
-              <Link to={`/listings/${listing.id}`} className="my-listing-card__link">
-                <div className="card-image">
-                  {listing.image ? (
-                    <img src={listing.image} alt="" loading="lazy" />
-                  ) : (
-                    <span className="no-image">No image</span>
-                  )}
-                </div>
-                <div className="card-body">
-                  <h3>{listing.name}</h3>
-                  {listing.category && <p className="card-meta">{listing.category}</p>}
-                </div>
-              </Link>
-              <button
-                type="button"
-                className="secondary-button my-listing-card__delete"
-                disabled={deletingId === listing.id}
-                onClick={() => handleDelete(listing.id)}
-              >
-                {deletingId === listing.id ? 'Deleting...' : 'Delete'}
-              </button>
-            </div>
+          {visible.map((item) => (
+            <RuralMarketCard
+              key={item.id}
+              item={item}
+              actions={
+                <button
+                  type="button"
+                  className="secondary-button danger-button"
+                  disabled={deletingId === item.id}
+                  onClick={() => handleDelete(item)}
+                >
+                  {deletingId === item.id ? 'Deleting...' : 'Delete'}
+                </button>
+              }
+            />
           ))}
         </div>
       )}

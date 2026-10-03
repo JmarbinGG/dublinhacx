@@ -3,6 +3,7 @@ import AppLayout from './components/AppLayout'
 import About from './pages/About'
 import Categories from './pages/Categories'
 import CreateListing from './pages/CreateListing'
+import DataSaver from './pages/DataSaver'
 import Home from './pages/Home'
 import Landing from './pages/Landing'
 import ListingDetail from './pages/ListingDetail'
@@ -24,6 +25,7 @@ export default function App() {
         <Route path="/listings/new" element={<CreateListing />} />
         <Route path="/my-listings" element={<MyListings />} />
         <Route path="/listings/:id" element={<ListingDetail />} />
+        <Route path="/data-saver" element={<DataSaver />} />
         <Route path="/about" element={<About />} />
         <Route path="/signin" element={<SignIn />} />
         <Route path="/signup" element={<SignUp />} />

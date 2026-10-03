@@ -29,13 +29,13 @@ export default function SignIn() {
       <div className="auth-pitch">
         <h2>Welcome back.</h2>
         <p>
-          Pick up right where you left off - keep browsing surplus materials from businesses
-          near you, or list your own for someone else to find.
+          Pick up where you left off - see what the communities around you are offering, or
+          post something of your own.
         </p>
         <ul>
-          <li>Track your own listings in one place</li>
-          <li>Message owners directly when you find what you need</li>
-          <li>Come back anytime - nothing here expires</li>
+          <li>See contact details and make offers</li>
+          <li>Post listings - even offline, they sync when you reconnect</li>
+          <li>Keep track of everything you've posted</li>
         </ul>
       </div>
 

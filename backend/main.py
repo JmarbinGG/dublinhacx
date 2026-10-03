@@ -1,46 +1,61 @@
+import io
+import json
 import os
+import re
+import secrets
+import time
 import uuid
-from typing import Optional
+from collections import defaultdict, deque
+from datetime import datetime, timezone
+from typing import Annotated, Literal, Optional, get_args
 
 import bcrypt
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, EmailStr
-from sqlalchemy import create_engine, or_, Column, Integer, String
+from PIL import Image, ImageOps, UnidentifiedImageError
+from pydantic import BaseModel, EmailStr, Field, StringConstraints, field_validator
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text, create_engine, or_
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 load_dotenv()
 
 from ai.base import AnalysisResult
+from ai.categories import CATEGORIES
 from ai.factory import get_classifier
+from seed import seed
 
-UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-DATABASE_URL = "sqlite:///./listings.db"
+# A new file rather than the old listings.db: the schema changed (items,
+# communities, sync_queue) and create_all can't migrate an existing table.
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{os.path.join(BASE_DIR, 'marketplace.db')}")
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
 
-class Listing(Base):
-    __tablename__ = "listings"
+def new_uuid() -> str:
+    return str(uuid.uuid4())
 
-    id = Column(Integer, primary_key=True, index=True)
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class Community(Base):
+    __tablename__ = "communities"
+
+    id = Column(String, primary_key=True, default=new_uuid)
     name = Column(String, nullable=False)
-    image = Column(String)
-    owner = Column(String)
-    location = Column(String)
-    quantity = Column(String)
-    email = Column(String)
-    mailtolink = Column(String)
-    status = Column(String, default="available")
-    category = Column(String)
-    tags = Column(String)  # comma-separated keywords, e.g. "wood,lumber,pallets"
-    owner_id = Column(Integer, nullable=True)  # users.id, if posted while signed in
+    lat = Column(Float, nullable=False)
+    lng = Column(Float, nullable=False)
+    approximate_population = Column(Integer)
 
 
 class User(Base):
@@ -48,368 +63,140 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
-    email = Column(String, nullable=False, unique=True, index=True)
+    email = Column(String, nullable=False, unique=True, index=True)  # always lowercased
     password = Column(String, nullable=False)  # bcrypt hash
+    community_id = Column(String, ForeignKey("communities.id"), nullable=True)
+
+
+class Item(Base):
+    __tablename__ = "items"
+
+    id = Column(String, primary_key=True, default=new_uuid)
+    community_id = Column(String, ForeignKey("communities.id"), nullable=False, index=True)
+    category = Column(String, nullable=False, index=True)  # one of ai.categories.CATEGORIES
+    title = Column(String, nullable=False)
+    description = Column(Text, default="")
+    price_or_exchange = Column(String, default="")
+    image_url = Column(String, nullable=True)
+    image_size_kb = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, index=True)
+    quantity = Column(String)
+    tags = Column(String)  # comma-separated keywords
+    status = Column(String, default="available")
+    owner = Column(String)  # display name - from the account, never the client
+    contact_email = Column(String)
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # NULL for seed data
+
+
+class SyncQueue(Base):
+    """Listings created offline on a device and replayed via POST /api/sync.
+    The client generates the id, so a retried sync is idempotent."""
+
+    __tablename__ = "sync_queue"
+
+    id = Column(String, primary_key=True)
+    payload_json = Column(Text, nullable=False)
+    status = Column(String, default="pending")  # pending | synced
+    timestamp = Column(DateTime(timezone=True), default=utcnow)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    item_id = Column(String, nullable=True)
 
 
 Base.metadata.create_all(bind=engine)
 
-MOCK_LISTINGS = [
-    Listing(
-        name="Cardboard Boxes (Bulk)",
-        image="https://images.unsplash.com/photo-1607166452427-7e4477079cb9?w=400&h=300&fit=crop",
-        owner="Acme Warehousing",
-        location="Austin, TX",
-        quantity="200 units",
-        email="acme@example.com",
-        mailtolink="mailto:acme@example.com?subject=Inquiry regarding Cardboard Boxes",
-        status="available",
-        category="paper",
-    ),
-    Listing(
-        name="Scrap Metal Offcuts",
-        image="https://images.unsplash.com/photo-1679996287979-166522b96c39?w=400&h=300&fit=crop",
-        owner="Metro Fabrication",
-        location="Detroit, MI",
-        quantity="1.5 tons",
-        email="metro@example.com",
-        mailtolink="mailto:metro@example.com?subject=Inquiry regarding Scrap Metal Offcuts",
-        status="available",
-        category="metal",
-    ),
-    Listing(
-        name="Expired Produce Crates",
-        image="https://images.unsplash.com/photo-1757627550652-30788bfce978?w=400&h=300&fit=crop",
-        owner="GreenLeaf Grocers",
-        location="Sacramento, CA",
-        quantity="50 crates",
-        email="greenleaf@example.com",
-        mailtolink="mailto:greenleaf@example.com?subject=Inquiry regarding Produce Crates",
-        status="available",
-        category="organic",
-    ),
-    Listing(
-        name="Wood Pallets",
-        image="https://commons.wikimedia.org/wiki/Special:FilePath/Wooden-pallets%20stacked%207.jpg?width=400",
-        owner="Union Logistics",
-        location="Portland, OR",
-        quantity="80 pallets",
-        email="union@example.com",
-        mailtolink="mailto:union@example.com?subject=Inquiry regarding Wood Pallets",
-        status="available",
-        category="wood",
-        tags="wood,lumber,timber,shipping",
-    ),
-    Listing(
-        name="Mixed Softwood Scraps",
-        image="https://commons.wikimedia.org/wiki/Special:FilePath/Wood%20planks.jpg?width=400",
-        owner="Cascade Millworks",
-        location="Eugene, OR",
-        quantity="3 pallets",
-        email="cascade@example.com",
-        mailtolink="mailto:cascade@example.com?subject=Inquiry regarding Mixed Softwood Scraps",
-        status="available",
-        category="wood",
-        tags="wood,scraps,softwood,offcuts",
-    ),
-    Listing(
-        name="Plywood Offcuts (3/4\" CDX)",
-        image="https://commons.wikimedia.org/wiki/Special:FilePath/Plywood%20panels%20for%20new%20construction.jpg?width=400",
-        owner="Riverside Framing Co.",
-        location="Columbus, OH",
-        quantity="60 sheets",
-        email="riverside@example.com",
-        mailtolink="mailto:riverside@example.com?subject=Inquiry regarding Plywood Offcuts",
-        status="available",
-        category="wood",
-        tags="wood,plywood,cdx,offcuts,sheathing",
-    ),
-    Listing(
-        name="Cabinet Panel Scraps (Melamine)",
-        image="https://commons.wikimedia.org/wiki/Special:FilePath/Birch%20plywood.jpg?width=400",
-        owner="Bluepeak Cabinetry",
-        location="Charlotte, NC",
-        quantity="40 panels",
-        email="bluepeak@example.com",
-        mailtolink="mailto:bluepeak@example.com?subject=Inquiry regarding Cabinet Panel Scraps",
-        status="available",
-        category="wood",
-        tags="wood,cabinet,melamine,panels,scraps",
-    ),
-    Listing(
-        name="Overstock Shaker Cabinet Doors",
-        image="https://commons.wikimedia.org/wiki/Special:FilePath/Wood%20planks%20background.jpg?width=400",
-        owner="Bluepeak Cabinetry",
-        location="Charlotte, NC",
-        quantity="25 doors",
-        email="bluepeak@example.com",
-        mailtolink="mailto:bluepeak@example.com?subject=Inquiry regarding Shaker Cabinet Doors",
-        status="available",
-        category="wood",
-        tags="wood,cabinet,doors,shaker,overstock",
-    ),
-    Listing(
-        name="Kiln-Dried 2x4 Stud Offcuts",
-        image="https://commons.wikimedia.org/wiki/Special:FilePath/Men%20stacking%20lumber%20at%20Seattle%20Cedar%20Lumber%20Manufacturing%20Company%2C%20ca1920%20(MOHAI%204377).jpg?width=400",
-        owner="Northgate Lumber",
-        location="Boise, ID",
-        quantity="500 linear ft",
-        email="northgate@example.com",
-        mailtolink="mailto:northgate@example.com?subject=Inquiry regarding 2x4 Stud Offcuts",
-        status="available",
-        category="wood",
-        tags="wood,lumber,studs,framing,offcuts",
-    ),
-    Listing(
-        name="Oak Hardwood Flooring Remnants",
-        image="https://commons.wikimedia.org/wiki/Special:FilePath/EbonyWhiteOak.JPG?width=400",
-        owner="Heritage Flooring Co.",
-        location="Nashville, TN",
-        quantity="300 sq ft",
-        email="heritage@example.com",
-        mailtolink="mailto:heritage@example.com?subject=Inquiry regarding Oak Flooring Remnants",
-        status="available",
-        category="wood",
-        tags="wood,oak,hardwood,flooring,remnants",
-    ),
-    Listing(
-        name="Steel Rebar Offcuts",
-        image="https://commons.wikimedia.org/wiki/Special:FilePath/A%20bunch%20of%20rebar%20up%20close.jpg?width=400",
-        owner="Ironclad Construction",
-        location="Pittsburgh, PA",
-        quantity="1,200 lbs",
-        email="ironclad@example.com",
-        mailtolink="mailto:ironclad@example.com?subject=Inquiry regarding Steel Rebar Offcuts",
-        status="available",
-        category="metal",
-        tags="metal,steel,rebar,offcuts,construction",
-    ),
-    Listing(
-        name="Aluminum Sheet Metal Scraps",
-        image="https://images.unsplash.com/photo-1679996287979-166522b96c39?w=400&h=300&fit=crop",
-        owner="Summit Fabrication",
-        location="Salt Lake City, UT",
-        quantity="800 lbs",
-        email="summit@example.com",
-        mailtolink="mailto:summit@example.com?subject=Inquiry regarding Aluminum Sheet Scraps",
-        status="available",
-        category="metal",
-        tags="metal,aluminum,sheet metal,scraps",
-    ),
-    Listing(
-        name="Structural Steel Beam Offcuts",
-        image="https://commons.wikimedia.org/wiki/Special:FilePath/Thai%20House%20Steel%20Beams%20Paint.JPG?width=400",
-        owner="Ironclad Construction",
-        location="Pittsburgh, PA",
-        quantity="14 beams",
-        email="ironclad@example.com",
-        mailtolink="mailto:ironclad@example.com?subject=Inquiry regarding Steel Beam Offcuts",
-        status="available",
-        category="metal",
-        tags="metal,steel,beams,structural,offcuts",
-    ),
-    Listing(
-        name="Copper Wire & Pipe Scraps",
-        image="https://commons.wikimedia.org/wiki/Special:FilePath/Copper%20scraps.JPG?width=400",
-        owner="Voltline Electrical",
-        location="Phoenix, AZ",
-        quantity="150 lbs",
-        email="voltline@example.com",
-        mailtolink="mailto:voltline@example.com?subject=Inquiry regarding Copper Wire and Pipe Scraps",
-        status="available",
-        category="metal",
-        tags="metal,copper,wire,pipe,scraps",
-    ),
-    Listing(
-        name="Galvanized Ductwork Scraps",
-        image="https://commons.wikimedia.org/wiki/Special:FilePath/HVAC%20Ventilation%20Exhaust.jpg?width=400",
-        owner="Apex HVAC Supply",
-        location="Kansas City, MO",
-        quantity="30 pieces",
-        email="apexhvac@example.com",
-        mailtolink="mailto:apexhvac@example.com?subject=Inquiry regarding Galvanized Ductwork Scraps",
-        status="available",
-        category="metal",
-        tags="metal,galvanized,ductwork,hvac,scraps",
-    ),
-    Listing(
-        name="Cabinet Hardware Overstock (Hinges & Pulls)",
-        image="https://commons.wikimedia.org/wiki/Special:FilePath/Kitchen%20cabinet%20hinge%2C%20Frog%20hinge%2001.JPG?width=400",
-        owner="Bluepeak Cabinetry",
-        location="Charlotte, NC",
-        quantity="600 units",
-        email="bluepeak@example.com",
-        mailtolink="mailto:bluepeak@example.com?subject=Inquiry regarding Cabinet Hardware Overstock",
-        status="available",
-        category="fixtures",
-        tags="fixtures,hardware,cabinet,hinges,pulls",
-    ),
-    Listing(
-        name="Door Hardware Lot (Knobs & Deadbolts)",
-        image="https://images.unsplash.com/photo-1613570777861-6e0e591bd8ec?w=400&h=300&fit=crop",
-        owner="Riverside Framing Co.",
-        location="Columbus, OH",
-        quantity="120 units",
-        email="riverside@example.com",
-        mailtolink="mailto:riverside@example.com?subject=Inquiry regarding Door Hardware Lot",
-        status="available",
-        category="fixtures",
-        tags="fixtures,hardware,door,knobs,deadbolts",
-    ),
-    Listing(
-        name="Commercial LED Light Fixture Overstock",
-        image="https://commons.wikimedia.org/wiki/Special:FilePath/Ceiling%20fan%20with%20light.png?width=400",
-        owner="Voltline Electrical",
-        location="Phoenix, AZ",
-        quantity="80 fixtures",
-        email="voltline@example.com",
-        mailtolink="mailto:voltline@example.com?subject=Inquiry regarding LED Light Fixture Overstock",
-        status="available",
-        category="fixtures",
-        tags="fixtures,lighting,led,commercial,overstock",
-    ),
-    Listing(
-        name="Plumbing Fixture Surplus (Faucets & Valves)",
-        image="https://commons.wikimedia.org/wiki/Special:FilePath/Faucet%20in%20a%20bathroom%20sink.jpg?width=400",
-        owner="Apex HVAC Supply",
-        location="Kansas City, MO",
-        quantity="45 units",
-        email="apexhvac@example.com",
-        mailtolink="mailto:apexhvac@example.com?subject=Inquiry regarding Plumbing Fixture Surplus",
-        status="available",
-        category="fixtures",
-        tags="fixtures,plumbing,faucets,valves,surplus",
-    ),
-    Listing(
-        name="Ceramic Tile Overstock",
-        image="https://commons.wikimedia.org/wiki/Special:FilePath/Tesselated%20tile%20floor%20pattern.jpg?width=400",
-        owner="Heritage Flooring Co.",
-        location="Nashville, TN",
-        quantity="500 sq ft",
-        email="heritage@example.com",
-        mailtolink="mailto:heritage@example.com?subject=Inquiry regarding Ceramic Tile Overstock",
-        status="available",
-        category="construction",
-        tags="construction,tile,ceramic,flooring,overstock",
-    ),
-    Listing(
-        name="Reclaimed Clean Face Brick",
-        image="https://images.unsplash.com/photo-1632758821813-eb8248651745?w=400&h=300&fit=crop",
-        owner="Ironclad Construction",
-        location="Pittsburgh, PA",
-        quantity="2,000 bricks",
-        email="ironclad@example.com",
-        mailtolink="mailto:ironclad@example.com?subject=Inquiry regarding Reclaimed Face Brick",
-        status="available",
-        category="construction",
-        tags="construction,brick,masonry,reclaimed",
-    ),
-    Listing(
-        name="Concrete Block Offcuts",
-        image="https://commons.wikimedia.org/wiki/Special:FilePath/Concrete%20Masonry%20blocks.jpg?width=400",
-        owner="Summit Fabrication",
-        location="Salt Lake City, UT",
-        quantity="300 blocks",
-        email="summit@example.com",
-        mailtolink="mailto:summit@example.com?subject=Inquiry regarding Concrete Block Offcuts",
-        status="available",
-        category="construction",
-        tags="construction,concrete,block,masonry,offcuts",
-    ),
-    Listing(
-        name="Drywall Sheet Offcuts",
-        image="https://images.unsplash.com/photo-1777793919680-0123bc31ce36?w=400&h=300&fit=crop",
-        owner="Riverside Framing Co.",
-        location="Columbus, OH",
-        quantity="70 sheets",
-        email="riverside@example.com",
-        mailtolink="mailto:riverside@example.com?subject=Inquiry regarding Drywall Sheet Offcuts",
-        status="available",
-        category="construction",
-        tags="construction,drywall,sheetrock,offcuts",
-    ),
-    Listing(
-        name="Mixed Construction Debris (Clean Fill)",
-        image="https://images.unsplash.com/photo-1777793919680-0123bc31ce36?w=400&h=300&fit=crop",
-        owner="Ironclad Construction",
-        location="Pittsburgh, PA",
-        quantity="10 cubic yards",
-        email="ironclad@example.com",
-        mailtolink="mailto:ironclad@example.com?subject=Inquiry regarding Mixed Construction Debris",
-        status="available",
-        category="construction",
-        tags="construction,debris,demolition,leftovers,cleanup",
-    ),
-    Listing(
-        name="Used Oak Wine Barrels",
-        image="https://images.unsplash.com/photo-1639757664366-83a495f4a9d9?w=400&h=300&fit=crop",
-        owner="Napa Valley Cellars",
-        location="Napa, CA",
-        quantity="40 barrels",
-        email="napavalleycellars@example.com",
-        mailtolink="mailto:napavalleycellars@example.com?subject=Inquiry regarding Used Oak Wine Barrels",
-        status="available",
-        category="wood",
-        tags="wood,wine barrels,oak,barrels,reclaimed",
-    ),
-    Listing(
-        name="Half-Cut Wine Barrel Planters",
-        image="https://images.unsplash.com/photo-1646419081436-b3ea1613accd?w=400&h=300&fit=crop",
-        owner="Sonoma Ridge Winery",
-        location="Sonoma, CA",
-        quantity="15 planters",
-        email="sonomaridge@example.com",
-        mailtolink="mailto:sonomaridge@example.com?subject=Inquiry regarding Wine Barrel Planters",
-        status="available",
-        category="wood",
-        tags="wood,wine barrels,planters,oak,reclaimed",
-    ),
-]
-
 with SessionLocal() as _db:
-    if _db.query(Listing).count() == 0:
-        _db.add_all(MOCK_LISTINGS)
-        _db.commit()
+    seed(_db, Community, Item)
 
 
-class ListingCreate(BaseModel):
-    name: str
-    image: Optional[str] = None
-    owner: Optional[str] = None
-    location: Optional[str] = None
+# ---- schemas ----
+
+Category = Literal["produce", "seeds", "heavy_tools", "skills_services", "general"]
+assert set(get_args(Category)) == set(CATEGORIES)  # keep the AI label set in lockstep
+
+
+def bounded_str(max_length: int, min_length: int = 0):
+    return Annotated[str, StringConstraints(strip_whitespace=True, min_length=min_length, max_length=max_length)]
+
+
+# Only images this server processed and stored - see /api/analyze.
+UPLOAD_URL_RE = re.compile(r"^/uploads/[0-9a-f]{32}\.jpg$")
+
+
+class ItemIn(BaseModel):
+    community_id: str
+    category: Category
+    title: bounded_str(120, min_length=2)
+    description: bounded_str(1000) = ""
+    price_or_exchange: bounded_str(120) = ""
+    quantity: Optional[bounded_str(60)] = None
+    tags: Optional[bounded_str(200)] = None
+    contact_email: Optional[EmailStr] = None
+    image_url: Optional[str] = None
+
+    @field_validator("image_url")
+    @classmethod
+    def image_must_be_ours(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None and not UPLOAD_URL_RE.match(value):
+            raise ValueError("image_url must come from /api/analyze")
+        return value
+
+
+class ItemOut(BaseModel):
+    id: str
+    community_id: str
+    category: str
+    title: str
+    description: Optional[str] = ""
+    price_or_exchange: Optional[str] = ""
+    image_url: Optional[str] = None
+    image_size_kb: Optional[int] = None
+    created_at: datetime
     quantity: Optional[str] = None
-    email: Optional[str] = None
-    mailtolink: Optional[str] = None
-    status: Optional[str] = "available"
-    category: Optional[str] = None
     tags: Optional[str] = None
-
-
-class ListingOut(ListingCreate):
-    id: int
-    # Not on ListingCreate on purpose - a client can never set this directly,
-    # only the server derives it from the auth token on creation.
+    status: Optional[str] = None
+    owner: Optional[str] = None
     owner_id: Optional[int] = None
 
     class Config:
         from_attributes = True
 
 
-class SignupRequest(BaseModel):
+class ItemDetail(ItemOut):
+    # Only filled in for signed-in viewers, so contact emails can't be
+    # scraped anonymously from the public list.
+    contact_email: Optional[str] = None
+
+
+class CommunityOut(BaseModel):
+    id: str
     name: str
+    lat: float
+    lng: float
+    approximate_population: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
+
+class SignupRequest(BaseModel):
+    name: bounded_str(80, min_length=1)
     email: EmailStr
-    password: str
+    # bcrypt only looks at the first 72 bytes - reject longer rather than
+    # silently ignoring the tail.
+    password: str = Field(min_length=8, max_length=72)
+    community_id: Optional[str] = None
 
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(max_length=72)
 
 
 class UserOut(BaseModel):
     id: int
     name: str
     email: str
+    community_id: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -420,8 +207,21 @@ class AuthResponse(BaseModel):
     user: UserOut
 
 
-# In-memory token store: token -> user id. Fine for a hackathon; wiped on restart.
-SESSIONS: dict[str, int] = {}
+class SyncEntry(BaseModel):
+    client_id: str = Field(min_length=8, max_length=64)
+    item: ItemIn
+
+
+class SyncRequest(BaseModel):
+    entries: list[SyncEntry] = Field(max_length=50)
+
+
+# ---- auth ----
+
+# token -> (user id, expiry epoch seconds). In memory, so a restart signs
+# everyone out; the frontend notices via /api/me and drops its stored token.
+SESSIONS: dict[str, tuple[int, float]] = {}
+SESSION_TTL_SECONDS = 7 * 24 * 3600
 
 
 def hash_password(password: str) -> str:
@@ -432,87 +232,171 @@ def verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(password.encode(), hashed.encode())
 
 
-def get_current_user_id(authorization: Optional[str] = Header(None)) -> Optional[int]:
-    """Looks up the bearer token against SESSIONS. Returns None if there's no
-    token or it's not recognized - used where being signed in is optional
-    (e.g. creating a listing anonymously is still allowed)."""
-    if not authorization or not authorization.startswith("Bearer "):
+# Compared against when the email isn't registered, so a login for an unknown
+# email takes as long as a wrong password (no account enumeration by timing).
+_DUMMY_HASH = hash_password(secrets.token_hex(16))
+
+
+def new_session(user_id: int) -> str:
+    token = secrets.token_urlsafe(32)
+    SESSIONS[token] = (user_id, time.time() + SESSION_TTL_SECONDS)
+    return token
+
+
+def bearer_token(authorization: Optional[str]) -> Optional[str]:
+    if not authorization:
         return None
-    token = authorization.removeprefix("Bearer ")
-    return SESSIONS.get(token)
+    scheme, _, token = authorization.strip().partition(" ")
+    if scheme.lower() != "bearer":
+        return None
+    return token.strip() or None
+
+
+def get_current_user_id(authorization: Optional[str] = Header(None)) -> Optional[int]:
+    token = bearer_token(authorization)
+    session = SESSIONS.get(token) if token else None
+    if not session:
+        return None
+    user_id, expires = session
+    if expires < time.time():
+        SESSIONS.pop(token, None)
+        return None
+    return user_id
 
 
 def require_current_user_id(authorization: Optional[str] = Header(None)) -> int:
-    """Same lookup, but 401s if there's no valid session - for routes where
-    being signed in is mandatory (viewing/deleting your own listings)."""
     user_id = get_current_user_id(authorization)
     if user_id is None:
         raise HTTPException(status_code=401, detail="Sign in required")
     return user_id
 
 
-app = FastAPI()
+# ---- rate limiting (in memory, per client IP) ----
 
+_HITS: dict[str, deque] = defaultdict(deque)
+
+
+def rate_limit(name: str, limit: int, window_seconds: int):
+    def dependency(request: Request):
+        key = f"{name}:{request.client.host if request.client else 'unknown'}"
+        now = time.time()
+        hits = _HITS[key]
+        while hits and hits[0] < now - window_seconds:
+            hits.popleft()
+        if len(hits) >= limit:
+            raise HTTPException(status_code=429, detail="Too many requests - please wait a minute and try again")
+        hits.append(now)
+
+    return Depends(dependency)
+
+
+# ---- app ----
+
+app = FastAPI(docs_url="/docs" if os.getenv("ENABLE_DOCS", "1") == "1" else None, redoc_url=None)
+
+# Localhost, LAN (phones testing the dev server) and ngrok tunnels by default;
+# CORS_ORIGINS adds exact origins, e.g. a deployed frontend.
+DEFAULT_ORIGIN_REGEX = (
+    r"https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?"
+    r"|https://[a-z0-9-]+\.ngrok(-free)?\.(app|dev|io)"
+)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=[o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()],
+    allow_origin_regex=os.getenv("CORS_ORIGIN_REGEX", DEFAULT_ORIGIN_REGEX),
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "ngrok-skip-browser-warning"],
 )
+# Low-bandwidth users: JSON lists compress ~5-10x.
+app.add_middleware(GZipMiddleware, minimum_size=500)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    if request.url.path.startswith("/uploads/"):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return response
+
 
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 
-@app.post("/api/analyze")
-def analyze_image(image: UploadFile = File(...)):
-    """Run the configured AI backend (see ai/factory.py) over an uploaded
-    photo and return suggested listing fields for the user to review/edit
-    before calling /api/upload.
+# ---- photo upload + AI suggestions ----
 
-    This is a sync `def`, not `async def`, on purpose: the NVIDIA/CLIP
-    backends make a slow, blocking network/inference call. FastAPI runs
-    sync routes in a worker thread pool, so that block doesn't freeze the
-    single-threaded event loop for every other endpoint - an `async def`
-    here previously froze the whole server (including /api/listings and
-    /api/search) for the duration of every analyze call.
-    """
-    contents = image.file.read()
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+MAX_IMAGE_EDGE = 800  # px - plenty for a phone screen, ~50-120 KB as JPEG
+JPEG_QUALITY = 70
+Image.MAX_IMAGE_PIXELS = 40_000_000  # refuse decompression bombs
 
-    ext = os.path.splitext(image.filename or "")[1] or ".jpg"
-    filename = f"{uuid.uuid4()}{ext}"
-    with open(os.path.join(UPLOAD_DIR, filename), "wb") as f:
-        f.write(contents)
 
-    # The photo is already saved above regardless of what happens next - the
-    # AI classification is just a convenience autofill on top of it. If it
-    # raises (AI backend timeout, network error, etc.) don't 500 the whole
-    # request: that would keep the client from ever learning image_url,
-    # silently dropping an already-uploaded photo from the listing. Fall back
-    # to empty suggestions instead, so the upload always succeeds.
+def compress_image(raw: bytes) -> bytes:
+    """Decode (which also proves it's really an image), drop EXIF/GPS by
+    re-encoding, shrink and recompress as a progressive JPEG."""
     try:
-        result = get_classifier().analyze(contents)
-    except Exception:
-        result = AnalysisResult(name="", category="", tags=[], quantity="", confidence=0.0)
-
-    return {
-        "name": result.name,
-        "category": result.category,
-        "tags": ",".join(result.tags),
-        "quantity": result.quantity,
-        "confidence": result.confidence,
-        "image_url": f"/uploads/{filename}",
-    }
+        with Image.open(io.BytesIO(raw)) as img:
+            img = ImageOps.exif_transpose(img).convert("RGB")
+            img.thumbnail((MAX_IMAGE_EDGE, MAX_IMAGE_EDGE))
+            out = io.BytesIO()
+            img.save(out, format="JPEG", quality=JPEG_QUALITY, optimize=True, progressive=True)
+            return out.getvalue()
+    except (UnidentifiedImageError, Image.DecompressionBombError, OSError):
+        raise HTTPException(status_code=400, detail="That file isn't a supported image")
 
 
-# Synonym groups: searching any term in a group also matches the rest of the group.
+@app.post("/api/analyze", dependencies=[rate_limit("analyze", 10, 60)])
+def analyze_image(image: UploadFile = File(...), _user_id: int = Depends(require_current_user_id)):
+    """Compress an uploaded photo, store it, and return AI-suggested listing
+    fields plus the stored image's size. Sync `def` on purpose: the AI call
+    blocks, and FastAPI runs sync routes in a thread pool."""
+    raw = image.file.read(MAX_UPLOAD_BYTES + 1)
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="Photo is too large (max 10 MB)")
+
+    compressed = compress_image(raw)
+    filename = f"{uuid.uuid4().hex}.jpg"
+    with open(os.path.join(UPLOAD_DIR, filename), "wb") as f:
+        f.write(compressed)
+
+    # The photo is saved either way - AI suggestions are only a convenience.
+    try:
+        result = get_classifier().analyze(compressed)
+        tags = result.tags if isinstance(result.tags, list) else []
+        suggestion = {
+            "title": str(result.name or ""),
+            "category": result.category if result.category in CATEGORIES else "general",
+            "description": str(result.description or ""),
+            "tags": ",".join(str(t) for t in tags),
+            "quantity": str(result.quantity or ""),
+            "confidence": float(result.confidence or 0.0),
+        }
+    except Exception as exc:
+        print(f"[analyze] classifier failed: {exc!r}")
+        suggestion = {"title": "", "category": "", "description": "", "tags": "", "quantity": "", "confidence": 0.0}
+
+    return {**suggestion, "image_url": f"/uploads/{filename}", "image_size_kb": max(1, round(len(compressed) / 1024))}
+
+
+# ---- communities ----
+
+@app.get("/api/communities", response_model=list[CommunityOut])
+def list_communities():
+    with SessionLocal() as db:
+        return db.query(Community).order_by(Community.name).all()
+
+
+# ---- items ----
+
 SYNONYM_GROUPS = [
-    {"wood", "pallets", "lumber", "timber"},
-    {"metal", "scrap metal", "steel", "aluminum", "offcuts"},
-    {"paper", "cardboard", "boxes", "packaging"},
-    {"organic", "produce", "food waste", "compost"},
-    {"plastic", "polymer"},
-    {"fixtures", "hardware", "hinges", "knobs", "lighting", "plumbing"},
-    {"construction", "debris", "demolition", "leftovers", "cleanup"},
+    {"seed", "seeds", "heirloom", "seed saving"},
+    {"tractor", "equipment", "machinery", "heavy_tools", "rental"},
+    {"produce", "vegetables", "food", "eggs", "honey"},
+    {"repair", "welding", "skills_services", "service", "labor"},
+    {"wood", "lumber", "timber", "pallets", "firewood"},
+    {"metal", "steel", "scrap", "scrap metal"},
 ]
 
 
@@ -527,127 +411,179 @@ def expand_query_terms(query: str) -> set[str]:
     return terms
 
 
-@app.get("/api/search", response_model=list[ListingOut])
-def search_listings(query: str = ""):
-    db = SessionLocal()
-    try:
-        terms = expand_query_terms(query)
-        if not terms:
-            return db.query(Listing).all()
+def escape_like(term: str) -> str:
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
-        filters = []
-        for term in terms:
-            like = f"%{term}%"
-            filters.append(Listing.name.ilike(like))
-            filters.append(Listing.category.ilike(like))
-            filters.append(Listing.location.ilike(like))
-            filters.append(Listing.tags.ilike(like))
 
-        results = db.query(Listing).filter(or_(*filters)).all()
-        return results
-    finally:
-        db.close()
+@app.get("/api/items", response_model=list[ItemOut])
+def list_items(q: str = "", category: Optional[Category] = None, limit: int = Query(200, ge=1, le=500)):
+    with SessionLocal() as db:
+        query = db.query(Item)
+        if category:
+            query = query.filter(Item.category == category)
+        terms = expand_query_terms(q[:100])
+        if terms:
+            filters = []
+            for term in terms:
+                like = f"%{escape_like(term)}%"
+                for column in (Item.title, Item.description, Item.category, Item.tags, Item.price_or_exchange):
+                    filters.append(column.ilike(like, escape="\\"))
+            query = query.filter(or_(*filters))
+        return query.order_by(Item.created_at.desc()).limit(limit).all()
+
+
+@app.get("/api/items/mine", response_model=list[ItemOut])
+def my_items(user_id: int = Depends(require_current_user_id)):
+    with SessionLocal() as db:
+        return db.query(Item).filter(Item.owner_id == user_id).order_by(Item.created_at.desc()).all()
+
+
+@app.get("/api/items/{item_id}", response_model=ItemDetail)
+def get_item(item_id: str, user_id: Optional[int] = Depends(get_current_user_id)):
+    with SessionLocal() as db:
+        item = db.get(Item, item_id)
+        if not item:
+            raise HTTPException(status_code=404, detail="Listing not found")
+        detail = ItemDetail.model_validate(item)
+        if user_id is None:
+            detail.contact_email = None
+        return detail
+
+
+def build_item(db, body: ItemIn, user: User) -> Item:
+    if not db.get(Community, body.community_id):
+        raise HTTPException(status_code=400, detail="Unknown community")
+
+    image_size_kb = None
+    if body.image_url:
+        path = os.path.join(UPLOAD_DIR, os.path.basename(body.image_url))
+        if not os.path.isfile(path):
+            raise HTTPException(status_code=400, detail="Uploaded photo not found - please re-upload it")
+        image_size_kb = max(1, round(os.path.getsize(path) / 1024))
+
+    return Item(
+        **body.model_dump(exclude={"contact_email"}),
+        contact_email=body.contact_email or user.email,
+        image_size_kb=image_size_kb,
+        owner=user.name,
+        owner_id=user.id,
+    )
+
+
+@app.post("/api/items", response_model=ItemOut, dependencies=[rate_limit("create", 20, 60)])
+def create_item(body: ItemIn, user_id: int = Depends(require_current_user_id)):
+    with SessionLocal() as db:
+        item = build_item(db, body, db.get(User, user_id))
+        db.add(item)
+        db.commit()
+        db.refresh(item)
+        return item
+
+
+@app.delete("/api/items/{item_id}")
+def delete_item(item_id: str, user_id: int = Depends(require_current_user_id)):
+    with SessionLocal() as db:
+        item = db.get(Item, item_id)
+        if not item:
+            raise HTTPException(status_code=404, detail="Listing not found")
+        if item.owner_id != user_id:
+            raise HTTPException(status_code=403, detail="You don't own this listing")
+        image_url = item.image_url
+        db.delete(item)
+        db.commit()
+
+    if image_url and UPLOAD_URL_RE.match(image_url):
+        try:
+            os.remove(os.path.join(UPLOAD_DIR, os.path.basename(image_url)))
+        except FileNotFoundError:
+            pass
+    return {"status": "deleted"}
+
+
+@app.post("/api/sync", dependencies=[rate_limit("sync", 10, 60)])
+def sync_offline_items(body: SyncRequest, user_id: int = Depends(require_current_user_id)):
+    """Replay listings a device queued while offline. Each entry is recorded
+    in sync_queue under its client-generated id first, so re-sending an
+    already-synced entry returns the same item instead of a duplicate."""
+    results = []
+    with SessionLocal() as db:
+        user = db.get(User, user_id)
+        for entry in body.entries:
+            row = db.get(SyncQueue, entry.client_id)
+            if row and row.user_id != user_id:
+                results.append({"client_id": entry.client_id, "status": "error", "detail": "Conflicting id"})
+                continue
+            if row and row.status == "synced":
+                results.append({"client_id": entry.client_id, "status": "synced", "item_id": row.item_id})
+                continue
+            if not row:
+                row = SyncQueue(id=entry.client_id, payload_json=entry.item.model_dump_json(), user_id=user_id)
+                db.add(row)
+                db.commit()
+            try:
+                item = build_item(db, entry.item, user)
+            except HTTPException as exc:
+                results.append({"client_id": entry.client_id, "status": "error", "detail": exc.detail})
+                continue
+            db.add(item)
+            db.flush()
+            row.status = "synced"
+            row.item_id = item.id
+            db.commit()
+            results.append({"client_id": entry.client_id, "status": "synced", "item_id": item.id})
+    return {"results": results}
+
+
+# ---- accounts ----
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
 
-@app.post("/api/signup", response_model=AuthResponse)
+@app.post("/api/signup", response_model=AuthResponse, dependencies=[rate_limit("signup", 5, 60)])
 def signup(body: SignupRequest):
-    db = SessionLocal()
-    try:
-        if db.query(User).filter(User.email == body.email).first():
-            raise HTTPException(status_code=400, detail="Email already registered")
+    email = body.email.lower()
+    with SessionLocal() as db:
+        if body.community_id and not db.get(Community, body.community_id):
+            raise HTTPException(status_code=400, detail="Unknown community")
+        if db.query(User).filter(User.email == email).first():
+            raise HTTPException(status_code=400, detail="Could not create an account with that email")
 
-        user = User(name=body.name, email=body.email, password=hash_password(body.password))
+        user = User(name=body.name, email=email, password=hash_password(body.password), community_id=body.community_id)
         db.add(user)
         db.commit()
         db.refresh(user)
-
-        token = str(uuid.uuid4())
-        SESSIONS[token] = user.id
-        return AuthResponse(token=token, user=UserOut.model_validate(user))
-    finally:
-        db.close()
+        return AuthResponse(token=new_session(user.id), user=UserOut.model_validate(user))
 
 
-@app.post("/api/login", response_model=AuthResponse)
+@app.post("/api/login", response_model=AuthResponse, dependencies=[rate_limit("login", 10, 60)])
 def login(body: LoginRequest):
-    db = SessionLocal()
-    try:
-        user = db.query(User).filter(User.email == body.email).first()
-        if not user or not verify_password(body.password, user.password):
+    with SessionLocal() as db:
+        user = db.query(User).filter(User.email == body.email.lower()).first()
+        if not verify_password(body.password, user.password if user else _DUMMY_HASH) or not user:
             raise HTTPException(status_code=401, detail="Invalid email or password")
-
-        token = str(uuid.uuid4())
-        SESSIONS[token] = user.id
-        return AuthResponse(token=token, user=UserOut.model_validate(user))
-    finally:
-        db.close()
-
-@app.get("/api/listings", response_model=list[ListingOut] | ListingOut)
-def get_listings(id: Optional[int] = None):
-    db = SessionLocal()
-    try:
-        if id is not None:
-            listing = db.query(Listing).filter(Listing.id == id).first()
-            if not listing:
-                raise HTTPException(status_code=404, detail="Listing not found")
-            return listing
-        return db.query(Listing).all()
-    finally:
-        db.close()
+        return AuthResponse(token=new_session(user.id), user=UserOut.model_validate(user))
 
 
-@app.get("/api/listings/mine", response_model=list[ListingOut])
-def get_my_listings(user_id: int = Depends(require_current_user_id)):
-    """Only what the signed-in user posted - not a public browse endpoint,
-    so this requires a valid session rather than taking an owner_id param
-    (which would let anyone list anyone else's listings)."""
-    db = SessionLocal()
-    try:
-        return db.query(Listing).filter(Listing.owner_id == user_id).all()
-    finally:
-        db.close()
+@app.post("/api/logout")
+def logout(authorization: Optional[str] = Header(None)):
+    token = bearer_token(authorization)
+    if token:
+        SESSIONS.pop(token, None)
+    return {"status": "signed out"}
 
 
-@app.post("/api/upload", response_model=ListingOut)
-def create_listing(
-    listing: ListingCreate,
-    owner_id: int = Depends(require_current_user_id),
-):
-    # Publishing a listing requires an account - anonymous posting used to be
-    # allowed but every listing now needs a real owner (for My Listings,
-    # delete permissions, and just knowing who posted it).
-    db = SessionLocal()
-    try:
-        new_listing = Listing(**listing.model_dump(), owner_id=owner_id)
-        db.add(new_listing)
-        db.commit()
-        db.refresh(new_listing)
-        return new_listing
-    finally:
-        db.close()
-
-
-@app.delete("/api/listings/{id}")
-def delete_listing(id: int, user_id: int = Depends(require_current_user_id)):
-    db = SessionLocal()
-    try:
-        listing = db.query(Listing).filter(Listing.id == id).first()
-        if not listing:
-            raise HTTPException(status_code=404, detail="Listing not found")
-        if listing.owner_id != user_id:
-            raise HTTPException(status_code=403, detail="You don't own this listing")
-        db.delete(listing)
-        db.commit()
-        return {"status": "deleted"}
-    finally:
-        db.close()
+@app.get("/api/me", response_model=UserOut)
+def me(user_id: int = Depends(require_current_user_id)):
+    with SessionLocal() as db:
+        user = db.get(User, user_id)
+        if not user:
+            raise HTTPException(status_code=401, detail="Sign in required")
+        return user
 
 
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=os.getenv("RELOAD", "1") == "1")

@@ -10,11 +10,12 @@ export default function Footer() {
       <div className="footer-inner">
         <div>
           <strong>byproduct.</strong>
-          <p>Turning byproducts into opportunities.</p>
+          <p>Specialized trade between rural communities, built for slow connections.</p>
         </div>
 
         <nav className="footer-links">
           <Link to="/about">About Us</Link>
+          <Link to="/data-saver">Data Saver</Link>
           <a href="mailto:hello@byproduct.app">Contact</a>
         </nav>
       </div>

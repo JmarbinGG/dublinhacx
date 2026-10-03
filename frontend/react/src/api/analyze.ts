@@ -1,33 +1,25 @@
-import { API_BASE_URL, postForm } from './client'
+import { request } from './client'
 
 /**
- * Backend route (see backend/main.py + backend/ai/factory.py):
- *
- *   POST /api/analyze   multipart, field name `image` -> AI-suggested fields
- *
- * Which model actually runs is swappable server-side via AI_BACKEND (mock /
- * clip / nvidia) - the response shape is the same either way.
+ * POST /api/analyze (signed in, multipart field `image`). The server
+ * verifies it's a real image, strips EXIF/GPS, shrinks it to 800px and
+ * recompresses it, then returns AI-suggested fields plus the stored size.
+ * Which model runs is swappable server-side via AI_BACKEND.
  */
-const ANALYZE_PATH = '/api/analyze'
-
 export type AnalyzeResult = {
-  name: string
+  title: string
   category: string
+  description: string
   tags: string
   quantity: string
   confidence: number
-  /** Relative to the API, e.g. "/uploads/abc.jpg" - see resolveImageUrl. */
+  /** API-relative, e.g. "/uploads/abc.jpg" - see resolveImageUrl. */
   image_url: string
+  image_size_kb: number
 }
 
-/** Upload a photo and get back a suggested name/category/tags/quantity. */
-export function analyzeImage(file: File, signal?: AbortSignal): Promise<AnalyzeResult> {
-  const formData = new FormData()
-  formData.append('image', file)
-  return postForm<AnalyzeResult>(ANALYZE_PATH, formData, signal)
-}
-
-/** analyzeImage's image_url is API-relative; make it usable in <img src>. */
-export function resolveImageUrl(path: string): string {
-  return /^https?:\/\//.test(path) ? path : `${API_BASE_URL}${path}`
+export function analyzeImage(file: File, token: string, signal?: AbortSignal): Promise<AnalyzeResult> {
+  const form = new FormData()
+  form.append('image', file)
+  return request<AnalyzeResult>('/api/analyze', { method: 'POST', form, token, signal })
 }

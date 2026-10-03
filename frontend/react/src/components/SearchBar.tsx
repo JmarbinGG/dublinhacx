@@ -30,7 +30,7 @@ export default function SearchBar({ initialQuery = '', size = 'small' }: Props) 
             type="search"
             value={value}
             onChange={(event) => setValue(event.target.value)}
-            placeholder="Search listings..."
+            placeholder="Seed garlic, log splitter, farrier..."
             aria-label="Search listings"
           />
           <button type="submit" className="primary-button">

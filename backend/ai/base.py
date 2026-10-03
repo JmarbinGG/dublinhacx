@@ -9,6 +9,7 @@ class AnalysisResult:
     tags: list[str]
     quantity: str
     confidence: float
+    description: str = ""
 
 
 class ImageClassifier(Protocol):
