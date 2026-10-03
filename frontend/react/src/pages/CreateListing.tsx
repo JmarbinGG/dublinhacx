@@ -6,14 +6,10 @@ import { useAuth } from '../auth/AuthContext'
 import { Loading } from '../components/States'
 import { formatKb } from '../context/DataBudgetContext'
 import { useListing } from '../hooks/useItems'
+import { TOPICS, isTopic } from '../lib/categories'
 import { ImageRejectedError, prepareImage } from '../lib/image'
 import { enqueueListing } from '../offline/syncQueue'
 import { EXCHANGES, LISTING_TYPES, type ExchangeType, type ListingKind, type ListingType } from '../types'
-
-const CATEGORY_SUGGESTIONS = [
-  'irrigation', 'farm machinery', 'farm tools', 'building', 'electrical', 'solar', 'sewing', 'textiles',
-  'carpentry', 'mechanics', 'transport', 'dairy', 'organic', 'seeds', 'teaching', 'crafts',
-]
 
 function splitTags(text: string): string[] {
   return [...new Set(text.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean))].slice(0, 10)
@@ -61,7 +57,7 @@ export default function CreateListing() {
     setKind(l.kind)
     setTitle(l.title)
     setDescription(l.description ?? '')
-    setCategory(l.category ?? '')
+    setCategory(isTopic(l.category ?? null) ? (l.category as string) : '')
     setTags(l.tags.join(', '))
     setQuantity(l.quantity ?? '')
     setExchange(l.exchange)
@@ -114,7 +110,7 @@ export default function CreateListing() {
       kind,
       title: title.trim(),
       description: description.trim() || null,
-      category: category.trim().toLowerCase() || null,
+      category: category || null,
       tags: splitTags(tags),
       image,
       quantity: quantity.trim() || null,
@@ -254,20 +250,17 @@ export default function CreateListing() {
         <div className="form-row">
           <div className="form-field">
             <label htmlFor="listing-category">Category</label>
-            <input
-              id="listing-category"
-              type="text"
-              list="category-suggestions"
-              maxLength={60}
-              placeholder="e.g. irrigation"
-              value={category}
-              onChange={(event) => setCategory(event.target.value)}
-            />
-            <datalist id="category-suggestions">
-              {CATEGORY_SUGGESTIONS.map((c) => (
-                <option key={c} value={c} />
+            {/* The backend's fixed list - we send the id. */}
+            <select id="listing-category" required value={category} onChange={(event) => setCategory(event.target.value)}>
+              <option value="" disabled>
+                Choose...
+              </option>
+              {TOPICS.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
               ))}
-            </datalist>
+            </select>
           </div>
           <div className="form-field">
             <label htmlFor="listing-quantity">Quantity</label>

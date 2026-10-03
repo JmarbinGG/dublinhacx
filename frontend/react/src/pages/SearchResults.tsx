@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { topicLabel } from '../lib/categories'
 import { useSearchParams } from 'react-router-dom'
 import { PAGE_SIZE } from '../api/listings'
 import { useAuth } from '../auth/AuthContext'
@@ -87,6 +88,14 @@ export default function SearchResults() {
     })
   const removeInterpreted = (term: string) => update((next) => next.append('x', term))
 
+  // Complex (AI) searches take a few seconds; after a moment, say so.
+  const [slow, setSlow] = useState(false)
+  useEffect(() => {
+    if (!smart.loading) return setSlow(false)
+    const id = setTimeout(() => setSlow(true), 1200)
+    return () => clearTimeout(id)
+  }, [smart.loading])
+
   // Focus the results heading after a new search, for screen readers.
   const headingRef = useRef<HTMLHeadingElement>(null)
   useEffect(() => {
@@ -131,6 +140,18 @@ export default function SearchResults() {
             </div>
           )}
 
+          {meta?.state.category && (
+            <div className="interpreted" aria-label="Category">
+              <span className="hint">Category:</span>
+              <span className="chip chip--removable">
+                {topicLabel(meta.state.category)}
+                <button type="button" aria-label="Any category" onClick={() => addRefinement('any category')}>
+                  <Icon name="x" />
+                </button>
+              </span>
+            </div>
+          )}
+
           <RefineBar
             query={filters.q}
             refinements={refinements}
@@ -146,7 +167,7 @@ export default function SearchResults() {
           <div className="status-slot" aria-live="polite">
             {smart.loading ? (
               <div className="searching" role="status">
-                Searching...
+                {slow ? 'Thinking...' : 'Searching...'}
                 <button type="button" className="secondary-button" onClick={smart.cancel}>
                   Cancel
                 </button>

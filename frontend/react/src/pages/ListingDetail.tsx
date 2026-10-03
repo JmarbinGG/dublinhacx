@@ -8,6 +8,7 @@ import DataBudgetImage from '../components/DataBudgetImage'
 import { ErrorState, Loading } from '../components/States'
 import { useCommunities } from '../context/CommunityContext'
 import { useListing, useProfile } from '../hooks/useItems'
+import { topicLabel } from '../lib/categories'
 import { timeAgo } from '../lib/geo'
 import { STATUSES, exchangeLabel, kindLabel, typeLabel, type ListingStatus } from '../types'
 
@@ -79,7 +80,7 @@ export default function ListingDetail() {
   const rows: [string, string | null | undefined][] = [
     ['Exchange', [exchangeLabel(listing.exchange), listing.price].filter(Boolean).join(' · ')],
     ['Quantity', listing.quantity],
-    ['Category', listing.category],
+    ['Category', listing.category ? topicLabel(listing.category) : null],
     ['Tags', listing.tags.join(', ')],
     ['Posted', timeAgo(listing.created_at)],
   ]

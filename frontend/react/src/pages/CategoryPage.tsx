@@ -5,7 +5,7 @@ import Icon from '../components/Icon'
 import ItemGrid from '../components/ItemGrid'
 import { useCommunities } from '../context/CommunityContext'
 import { useListings } from '../hooks/useItems'
-import { TOPICS, groupById, topicCounts, topicOf, type Topic } from '../lib/categories'
+import { groupById, isTopic, topicCounts, topicLabel, topicOf } from '../lib/categories'
 import { filterExchange, readFilters, toListingQuery } from '../lib/filters'
 import { flipFrom } from '../lib/motion'
 import { takeTileRect } from '../lib/viewTransition'
@@ -25,7 +25,7 @@ export default function CategoryPage() {
   const filters = readFilters(params)
   const { home, homePoint } = useCommunities()
   const topicParam = params.get('topic')
-  const topic = TOPICS.includes(topicParam as Topic) ? (topicParam as Topic) : null
+  const topic = isTopic(topicParam) ? topicParam : null
   const page = Math.max(1, Number(params.get('page')) || 1)
 
   // The whole category in one cached request; topic, exchange and paging
@@ -76,15 +76,15 @@ export default function CategoryPage() {
 
       {topics.length > 1 && (
         <div className="chip-row" role="group" aria-label="Topics">
-          {topics.map(([name, count]) => (
+          {topics.map(([id, count]) => (
             <button
-              key={name}
+              key={id}
               type="button"
               className="chip"
-              aria-pressed={topic === name}
-              onClick={() => set('topic', topic === name ? null : name)}
+              aria-pressed={topic === id}
+              onClick={() => set('topic', topic === id ? null : id)}
             >
-              {name} <span className="chip__count">{count}</span>
+              {topicLabel(id)} <span className="chip__count">{count}</span>
             </button>
           ))}
         </div>

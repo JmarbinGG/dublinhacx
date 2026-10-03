@@ -32,6 +32,8 @@ export type SearchState = {
   kind?: string | null
   exchange?: string | null
   max_km?: number | null
+  /** One of the fixed category ids (lib/categories TOPICS), set by a refine. */
+  category?: string | null
   need?: string | null
   refinements: string[]
 }

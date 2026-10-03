@@ -7,19 +7,18 @@ import { withOfflineCache, type Cached } from './offlineCache'
  * Home page data in ONE request: per category, a count and the four
  * nearest listings.
  *
- * Uses the proposed GET /api/listings/summary when VITE_SUMMARY_ENDPOINT=1.
- * Until the backend has it, a single GET /api/listings (nearest first),
- * grouped locally - still one request, cached for offline, so the tiles
- * render from cached counts with no connection.
+ * GET /api/listings/summary (~1.7 KB gzipped). If an older backend lacks
+ * it, a single GET /api/listings (nearest first) grouped locally - still
+ * one request. Cached either way, so the tiles render offline.
  */
 
 export type GroupSummary = { count: number; items: Listing[] }
 export type Summary = Record<GroupId, GroupSummary>
 
 const PER_ROW = 4
-// Only ask for the summary route once the backend has it
-// (VITE_SUMMARY_ENDPOINT=1) - probing a missing route logs an error.
-let summaryRouteMissing = import.meta.env.VITE_SUMMARY_ENDPOINT !== '1'
+// Set if the summary route ever answers 404/405/422 (an older backend), so
+// we stop asking for the rest of the session and use the fallback.
+let summaryRouteMissing = false
 
 function isSummary(raw: unknown): raw is Summary {
   const body = raw as Record<string, GroupSummary> | null
@@ -37,8 +36,8 @@ export function getSummary(
         const raw = await request<unknown>('/api/listings/summary', { params: { ...params, per_group: PER_ROW }, signal })
         if (isSummary(raw)) return raw
       } catch (error) {
-        // 404/405/422: route not built yet - stop asking this session.
-        if (!(error instanceof ApiError) || error.status === undefined) throw error
+        // 404/405/422: route not on this backend - stop asking this session.
+        if (!(error instanceof ApiError) || ![404, 405, 422].includes(error.status ?? 0)) throw error
       }
       summaryRouteMissing = true
     }
