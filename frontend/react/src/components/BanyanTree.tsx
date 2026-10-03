@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { TREE } from '../generated/art'
 import { motionAllowed } from '../lib/motion'
 
-type Kind = 'draw' | 'spread' | 'fan' | 'bloom' | 'drop'
+type Kind = 'draw' | 'fade' | 'spread' | 'fan' | 'bloom' | 'drop'
 
 // Start state for each kind of growth (the end state is the element at rest).
 const FROM: Record<Kind, Keyframe> = {
   draw: { strokeDashoffset: 1 }, // strands and limbs draw on (pathLength=1)
+  fade: { opacity: 0 }, // the solid trunk fill behind the strands
   spread: { opacity: 0, transform: 'scaleX(0)' }, // ground patch from its centre
   fan: { opacity: 0, transform: 'scaleX(0.15)' }, // buttress roots fan out
   bloom: { opacity: 0, transform: 'scale(0.6)' }, // a canopy region
@@ -14,6 +15,7 @@ const FROM: Record<Kind, Keyframe> = {
 }
 const TO: Record<Kind, Keyframe> = {
   draw: { strokeDashoffset: 0 },
+  fade: { opacity: 1 },
   spread: { opacity: 1, transform: 'none' },
   fan: { opacity: 1, transform: 'none' },
   bloom: { opacity: 1, transform: 'none' },
@@ -79,7 +81,7 @@ export default function BanyanTree() {
   }, [animate])
 
   const a = (kind: Kind, [start, dur]: readonly number[]) => `${kind},${start},${dur}`
-  const { ground, strands, buttress, limbs, canopy, roots } = TREE
+  const { ground, strands, trunkFill, buttress, limbs, canopy, roots } = TREE
 
   return (
     <svg
@@ -96,9 +98,17 @@ export default function BanyanTree() {
       {roots.map((r, i) => (
         <path key={`r${i}`} className="tree__roots" d={r.d} data-a={a('drop', r.a)} />
       ))}
-      <path className="tree__wood tree__buttress" d={buttress.d} strokeWidth={5} data-a={a('fan', buttress.a)} />
-      {[...strands, ...limbs].map(([d, w, s, dur], i) => (
-        <path key={`w${i}`} className="tree__wood tree__draw" d={d} pathLength={1} strokeWidth={w} data-a={a('draw', [s, dur])} />
+      <path className="tree__fill" d={trunkFill.d} data-a={a('fade', trunkFill.a)} />
+      <path className="tree__buttress" d={buttress.d} data-a={a('fan', buttress.a)} />
+      {[...strands, ...limbs].map(([d, w, s, dur, tone], i) => (
+        <path
+          key={`w${i}`}
+          className={`tree__wood tree__draw${tone ? ' tree__wood--dark' : ''}`}
+          d={d}
+          pathLength={1}
+          strokeWidth={w}
+          data-a={a('draw', [s, dur])}
+        />
       ))}
       {canopy.map((g, i) => {
         const circles = []

@@ -20,6 +20,7 @@
   --tree-light: #77a86c;
   --tree-ground: #c0dab3;
   --tree-trunk: #786555;
+  --tree-trunk-dark: #554438;
   color-scheme: light;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in: cubic-bezier(0.4, 0, 1, 1);
@@ -51,6 +52,7 @@
   --tree-light: #507f4f;
   --tree-ground: #1f311b;
   --tree-trunk: #7f6e60;
+  --tree-trunk-dark: #5a493f;
   color-scheme: dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -75,6 +77,7 @@
     --tree-light: #507f4f;
     --tree-ground: #1f311b;
     --tree-trunk: #7f6e60;
+    --tree-trunk-dark: #5a493f;
     color-scheme: dark;
   }
 }

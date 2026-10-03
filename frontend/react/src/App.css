@@ -1694,6 +1694,20 @@ textarea {
   stroke-linecap: round;
 }
 
+/* Two flat trunk tones: taupe strands, darker shaded strands and the solid
+   fill behind them, so the trunk reads as fused stems, not see-through. */
+.tree__wood--dark {
+  stroke: var(--tree-trunk-dark);
+}
+
+.tree__fill {
+  fill: var(--tree-trunk-dark);
+}
+
+.tree__buttress {
+  fill: var(--tree-trunk);
+}
+
 /* Draw-on: pathLength=1, so dash 1 is the whole path. */
 .tree__draw {
   stroke-dasharray: 1;

@@ -47,6 +47,7 @@ const PALETTE = {
     'tree-light': [0.68, 0.1, 140],
     'tree-ground': [0.86, 0.06, 135],
     'tree-trunk': [0.52, 0.035, 60],
+    'tree-trunk-dark': [0.4, 0.03, 55],
   },
   dark: {
     bg: [0.195, 0.009, 153.1],
@@ -69,6 +70,7 @@ const PALETTE = {
     'tree-light': [0.55, 0.09, 144],
     'tree-ground': [0.29, 0.045, 140],
     'tree-trunk': [0.55, 0.03, 60],
+    'tree-trunk-dark': [0.42, 0.028, 55],
   },
 }
 
@@ -219,32 +221,52 @@ function banyan(seed = 11) {
   }
   ground.g = grass
 
-  // Trunk: six strands rising together; they cross (twist) and narrow in
-  // the middle, flare at the base. Total width ~48 px = 12%.
+  // Trunk: seven fat strands of different widths, overlapping and
+  // twisting, rising together. ~15% of the width at the base (60 px),
+  // narrowing only to ~70% (42 px) up to the limb split. A solid
+  // dark shape behind them fills the gaps so it reads as fused stems.
   const TOP = 196
+  const BASE_HALF = 30
+  const TOP_HALF = 21
   const strands = []
   let trunkEnd = 0
-  for (let i = 0; i < 6; i++) {
-    const k = i - 2.5
-    const bx = CX + k * 10 // base, flared
-    const mx = CX - k * 3.5 // middle, crossed and narrow
-    const tx = CX + k * 7 // top, spreading into the limbs
-    const d = `M${r0(bx)} ${GY}C${r0(bx + k)} ${GY - 22} ${r0(mx)} ${GY - 40} ${r0(mx)} ${GY - 50}S${r0(tx - k * 2)} ${TOP + 18} ${r0(tx)} ${TOP}`
-    const len = GY - TOP + 12
-    const p0 = 0.04
-    const p1 = p0 + len * SPEED
+  const trunkLen = GY - TOP + 12
+  // Its own random stream, so trunk detail never shifts the canopy/roots.
+  const trand = rng(seed + 101)
+  const strandP0 = 0.04
+  for (let i = 0; i < 7; i++) {
+    const k = i - 3 // -3 .. 3
+    const w = 9 + trand() * 6 // 9-15 px: varied, like fused stems
+    const bx = CX + k * ((BASE_HALF - 6) / 3) // base, flared
+    const mx = CX - k * 4.2 + (trand() - 0.5) * 3 // middle: crossed (twist)
+    const tx = CX + k * ((TOP_HALF - 5) / 3) // top, under the limbs
+    const d = `M${r0(bx)} ${GY}C${r0(bx + k * 1.5)} ${GY - 22} ${r0(mx)} ${GY - 38} ${r0(mx)} ${GY - 50}S${r0(tx - k * 2)} ${TOP + 18} ${r0(tx)} ${TOP}`
+    const p1 = strandP0 + trunkLen * SPEED
     trunkEnd = Math.max(trunkEnd, p1)
-    strands.push([d, 8, span(p0, p1)])
+    // Every other strand in the darker tone (shaded stems).
+    strands.push([d, r0(w), span(strandP0, p1), i % 2])
+  }
+  // Solid fill behind the strands; fades in with them.
+  const trunkFill = {
+    d: `M${CX - BASE_HALF} ${GY}C${CX - BASE_HALF + 4} ${GY - 30} ${CX - TOP_HALF - 2} ${GY - 50} ${CX - TOP_HALF} ${TOP}H${CX + TOP_HALF}C${CX + TOP_HALF + 2} ${GY - 50} ${CX + BASE_HALF - 4} ${GY - 30} ${CX + BASE_HALF} ${GY}Z`,
+    a: span(strandP0, trunkEnd),
   }
 
-  // Buttress roots fan out along the ground as the trunk finishes.
+  // Buttress roots: thick, tapering filled wedges spreading wide and low
+  // (out to ~1.5x the trunk width each side of centre), blending into the
+  // trunk base. They fan out as the trunk finishes.
   let buttress = ''
   for (let i = 0; i < 8; i++) {
     const side = i < 4 ? -1 : 1
     const j = i % 4
-    const x0 = CX + side * (8 + j * 5)
-    const x1 = CX + side * (34 + j * 14 + rand() * 8)
-    buttress += `M${r0(x0)} ${GY - 14 + j * 3}Q${r0((x0 + x1) / 2)} ${GY - 2} ${r0(x1)} ${GY + 2}`
+    const root = CX + side * (BASE_HALF - 6 - j * 5) // where it leaves the trunk
+    const top = GY - 26 + j * 5
+    const tip = CX + side * (BASE_HALF * 1.5 + j * 12 + rand() * 10)
+    const half = 7 - j // thickness at the trunk, tapering to the tip
+    buttress +=
+      `M${r0(root - side * half)} ${r0(top)}` +
+      `Q${r0((root + tip) / 2)} ${GY - 6} ${r0(tip)} ${GY + 1}` +
+      `Q${r0((root + tip) / 2)} ${GY + 2} ${r0(root + side * half)} ${GY}Z`
   }
   const buttressA = span(trunkEnd - 0.06, trunkEnd + 0.06)
 
@@ -262,7 +284,15 @@ function banyan(seed = 11) {
     const len = Math.hypot(ex - ax, ey - ay) * 1.1
     const p0 = 0.04 + ((GY - ay) / (GY - TOP + 12)) * (trunkEnd - 0.04)
     const p1 = p0 + len * SPEED
-    limbs.push([d, 7, span(p0, p1)])
+    limbs.push([d, 7, span(p0, p1), 0])
+    // Collar: the limb's first 35% drawn thicker, so it grows out of the
+    // trunk. De Casteljau split of the quadratic at t: a -> lerp(a, c, t) -> B(t).
+    const t = 0.35
+    const cx1 = ax + (CX + side * reach * 0.35 - ax) * t
+    const cy1 = ay + (ay - rise * 0.15 - ay) * t
+    const bx1 = (1 - t) ** 2 * ax + 2 * (1 - t) * t * (CX + side * reach * 0.35) + t * t * ex
+    const by1 = (1 - t) ** 2 * ay + 2 * (1 - t) * t * (ay - rise * 0.15) + t * t * ey
+    limbs.push([`M${r0(ax)} ${r0(ay)}Q${r0(cx1)} ${r0(cy1)} ${r0(bx1)} ${r0(by1)}`, 13, span(p0, p0 + len * t * SPEED), 0])
     tips.push([ex, ey, p1])
   })
 
@@ -351,9 +381,10 @@ function banyan(seed = 11) {
     vb: [0, 0, W, 300],
     T: TOTAL,
     ground,
-    strands: strands.map(([d, w, sp]) => [d, w, sp[0], sp[1]]),
+    strands: strands.map(([d, w, sp, tone]) => [d, w, sp[0], sp[1], tone]),
+    trunkFill,
     buttress: { d: buttress, a: buttressA },
-    limbs: limbs.map(([d, w, sp]) => [d, w, sp[0], sp[1]]),
+    limbs: limbs.map(([d, w, sp, tone]) => [d, w, sp[0], sp[1], tone]),
     canopy: groups.map(({ a, c }) => ({ a, c })),
     roots,
   }
@@ -484,8 +515,9 @@ writeFileSync(
     `export const TREE = ${JSON.stringify(tree)} as {\n` +
     `  vb: [number, number, number, number]; T: number\n` +
     `  ground: { e: number[]; g: string; a: Span }\n` +
-    `  strands: [string, number, number, number][]; limbs: [string, number, number, number][]\n` +
-    `  buttress: { d: string; a: Span }; canopy: { a: Span; c: number[] }[]; roots: { d: string; a: Span }[]\n` +
+    `  strands: [string, number, number, number, number][]; limbs: [string, number, number, number, number][]\n` +
+    `  trunkFill: { d: string; a: Span }; buttress: { d: string; a: Span }\n` +
+    `  canopy: { a: Span; c: number[] }[]; roots: { d: string; a: Span }[]\n` +
     `}\n`,
 )
 
