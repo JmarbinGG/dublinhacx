@@ -1,0 +1,22 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local dev database
+listings.db
+
+# User-uploaded photos (runtime content, not source)
+backend/uploads/
+
+# Node
+node_modules/
+dist/
+
+# Local env overrides
+.env
+.env.local

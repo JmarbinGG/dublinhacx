@@ -1,0 +1,941 @@
+/* ---- page shell ---- */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.container {
+  max-width: 1100px;
+  margin-inline: auto;
+  padding: 40px 24px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  flex: 1;
+}
+
+/* ---- navbar ---- */
+
+.navbar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.navbar-inner {
+  max-width: 1100px;
+  margin-inline: auto;
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.logo-mark {
+  height: 26px;
+  width: auto;
+  display: block;
+}
+
+/* Kept exactly matching the logo artwork's own ink color, not the palette
+   below - it has to match the pixels in the image itself. */
+.logo-period {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: #003748;
+}
+
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+/* :not(.primary-button) so the Sign Up button (an <a> in this nav) keeps its
+   own white-on-accent color instead of inheriting the plain-link gray. */
+.nav-links a:not(.primary-button) {
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--text-muted);
+  transition: color 0.15s;
+}
+
+.nav-links a:not(.primary-button):hover {
+  color: var(--text);
+}
+
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+.link-button:hover {
+  color: var(--text);
+}
+
+.nav-greeting {
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--text);
+}
+
+/* ---- buttons ---- */
+
+.primary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 0.92rem;
+  padding: 12px 22px;
+  border-radius: var(--radius-md);
+  color: #ffffff;
+  background: var(--accent);
+  border: none;
+  box-shadow: 0 1px 2px rgba(43, 38, 32, 0.1);
+  transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
+  cursor: pointer;
+}
+
+.primary-button:hover {
+  background: var(--accent-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(43, 38, 32, 0.16);
+}
+
+.primary-button:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(43, 38, 32, 0.1);
+}
+
+.primary-button:disabled {
+  transform: none;
+  box-shadow: none;
+}
+
+.secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 0.92rem;
+  padding: 12px 22px;
+  border-radius: var(--radius-md);
+  color: var(--text);
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  cursor: pointer;
+}
+
+.secondary-button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-tint);
+}
+
+/* .state--error's retry button reuses .secondary-button's shape, in the
+   danger color, since it's a "try again after a failure" action. */
+.state--error .secondary-button {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.state--error .secondary-button:hover {
+  background: var(--danger-tint);
+}
+
+/* ---- hero + search ---- */
+
+.hero {
+  text-align: center;
+  padding: 24px 16px 8px;
+  position: relative;
+}
+
+.hero h1 {
+  font-family: var(--font-display);
+  font-size: clamp(2.1rem, 4.5vw, 3.1rem);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  max-width: 720px;
+  margin-inline: auto;
+}
+
+.hero p {
+  max-width: 560px;
+  margin: 14px auto 0;
+  font-size: 1.1rem;
+  color: var(--text-muted);
+}
+
+/* One continuous shape: the input, Search, and Browse all live inside a
+   single rounded/clipped container instead of three separate rounded
+   elements sitting next to each other. */
+.search-bar {
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  min-width: 0;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+
+.search-bar:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-tint);
+}
+
+/* The row wrapping the pill and the round "+" - centering the whole group
+   together (not just the pill alone) is what this owns. */
+.search-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 2rem 0 0;
+}
+
+.search-bar-row--large {
+  max-width: 684px;
+  margin-inline: auto;
+}
+
+.new-listing-fab {
+  flex: 0 0 auto;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #ffffff;
+  background: var(--accent);
+  box-shadow: 0 1px 2px rgba(43, 38, 32, 0.1);
+  transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+
+.new-listing-fab:hover {
+  background: var(--accent-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(43, 38, 32, 0.16);
+}
+
+.search-bar__form {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+
+.search-bar input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  padding: 15px 22px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+}
+
+.search-bar input::placeholder {
+  color: var(--text-subtle);
+}
+
+.search-bar input:focus {
+  outline: none;
+}
+
+/* Search + Browse become flush segments of the shape - no divider line, so
+   the whole bar reads as one continuous, fluid piece. */
+.search-bar .primary-button,
+.search-bar .secondary-button {
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
+}
+
+.search-bar .primary-button:hover,
+.search-bar .secondary-button:hover {
+  transform: none;
+}
+
+/* Opaque (not transparent, unlike the input segment) so it reads as its own
+   distinct solid fill next to Search's green, while staying flush in the
+   same shape - no radius/gap/divider between the two segments. */
+.search-bar .secondary-button {
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* ---- results ---- */
+
+.results-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+
+.count {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-tint);
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 1.25rem;
+}
+
+/* ---- listing cards ---- */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.18s, box-shadow 0.18s, border-color 0.18s;
+}
+
+.card:hover {
+  transform: translateY(-4px);
+  border-color: transparent;
+  box-shadow: var(--shadow-card-hover);
+}
+
+.card-image {
+  aspect-ratio: 4 / 3;
+  background: var(--surface-alt);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.no-image {
+  color: var(--text-subtle);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.card-body {
+  padding: 18px;
+}
+
+.card-body h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.card-meta {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+}
+
+.badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  background: var(--accent-tint);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+}
+
+/* ---- my listings ---- */
+
+.my-listing-card {
+  position: relative;
+}
+
+.my-listing-card__link {
+  display: flex;
+  flex-direction: column;
+  color: inherit;
+}
+
+.my-listing-card__delete {
+  margin: 0 18px 18px;
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.my-listing-card__delete:hover {
+  background: var(--danger-tint);
+}
+
+
+/* ---- loading / empty / error states ---- */
+
+.state {
+  color: var(--text-muted);
+  padding: 3rem 0;
+  text-align: center;
+}
+
+.state--error {
+  color: var(--danger);
+}
+
+.state--error .secondary-button {
+  margin-top: 0.75rem;
+}
+
+/* ---- listing detail ---- */
+
+.detail {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+}
+
+.back {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-muted);
+  font-weight: 600;
+  margin-bottom: 1.25rem;
+}
+
+.back:hover {
+  color: var(--text);
+}
+
+.detail h1 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--text);
+  font-size: 1.85rem;
+}
+
+.detail-image {
+  width: 100%;
+  max-width: 480px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  margin: 1rem 0;
+}
+
+.detail-fields {
+  margin: 1.25rem 0 1.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.detail-row {
+  display: flex;
+  gap: 1rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.detail-row dt {
+  flex: 0 0 150px;
+  color: var(--text-muted);
+  font-weight: 700;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.detail-row dd {
+  margin: 0;
+  word-break: break-word;
+  color: var(--text);
+}
+
+/* ---- stats (a small row of KPI cards) ---- */
+
+.stats-panel h2 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 14px;
+}
+
+.stat-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 16px;
+}
+
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+}
+
+/* Pops up on hover the same way the primary button does - flat at rest, a
+   little lift + soft shadow on hover to signal it's clickable. */
+.stat-card:hover {
+  transform: translateY(-2px);
+  border-color: transparent;
+  box-shadow: var(--shadow-card);
+}
+
+.stat-value {
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--accent);
+}
+
+.stat-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+/* ---- footer ---- */
+
+.site-footer {
+  background: var(--surface-alt);
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  margin-top: 32px;
+}
+
+.footer-inner {
+  max-width: 1100px;
+  margin-inline: auto;
+  padding: 32px 24px 20px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.site-footer strong {
+  color: var(--text);
+}
+
+.site-footer p {
+  margin: 0.2rem 0 0;
+}
+
+.footer-links {
+  display: flex;
+  gap: 1.25rem;
+}
+
+.footer-links a:hover {
+  color: var(--text);
+}
+
+.footer-copy {
+  width: 100%;
+  text-align: center;
+  font-size: 0.78rem;
+  padding: 16px 24px 0;
+  max-width: 1100px;
+  margin-inline: auto;
+}
+
+/* ---- sign-up / sign-in layout: mission pitch, empty space, then the form ---- */
+
+.auth-layout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 64px;
+  flex-wrap: wrap;
+}
+
+.auth-pitch {
+  flex: 1 1 360px;
+  max-width: 420px;
+}
+
+.auth-pitch h2 {
+  font-family: var(--font-display);
+  font-size: 1.7rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.auth-pitch p {
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin-bottom: 1rem;
+}
+
+.auth-pitch ul {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: var(--text-muted);
+  line-height: 1.8;
+}
+
+/* ---- auth forms (sign in / sign up) ---- */
+
+.auth-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  max-width: 480px;
+  margin-inline: auto;
+}
+
+/* Inside the auth layout, .auth-layout's own centering handles
+   positioning - an auto margin here would fight it. An explicit width is
+   needed too: as a flex item with flex: 0 0 auto, .auth-panel would otherwise
+   shrink-to-fit its content (mostly label text) instead of actually reaching
+   480px, the same sizing quirk .create-listing-panel works around below. */
+.auth-layout .auth-panel {
+  margin-inline: 0;
+  flex: 0 0 auto;
+  width: min(480px, 100%);
+}
+
+/* Create Listing reuses .auth-panel's styling but needs more breathing room -
+   it has twice as many fields plus a photo picker, and looks cramped at the
+   sign-in/sign-up width. `width: 100%` is needed alongside `max-width` here:
+   .auth-panel's auto inline margins make it a shrink-to-fit flex item, so
+   without an explicit width it sizes to its content (label text, mostly)
+   and never grows to fill the extra space `max-width` allows. */
+.create-listing-panel {
+  width: 100%;
+  max-width: 640px;
+}
+
+.auth-panel h1 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--text);
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.auth-panel .form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+
+.auth-panel label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.auth-panel input {
+  font: inherit;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.auth-panel input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-tint);
+}
+
+.auth-panel .primary-button {
+  width: 100%;
+  margin-top: 0.25rem;
+}
+
+/* File picker: hide the native input, trigger it via a styled label instead,
+   and show a small thumbnail once a photo is chosen. */
+.file-input {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.auth-panel .file-input input[type='file'] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: none;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.file-input__button {
+  flex: 0 0 auto;
+}
+
+.file-input__preview {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  border: 1px solid var(--border);
+}
+
+.file-input__hint {
+  font-size: 0.85rem;
+  color: var(--text-subtle);
+}
+
+/* Inline status under the photo field - deliberately not the page-level
+   .state class, which is meant for a full empty/loading page and has a big
+   3rem vertical padding that looks broken squeezed into a compact form. */
+.photo-status {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 8px 0 0;
+}
+
+.photo-status--error {
+  color: var(--danger);
+}
+
+.form-error {
+  color: var(--danger);
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin: -0.35rem 0 1rem;
+}
+
+.auth-switch {
+  text-align: center;
+  margin-top: 1.5rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.auth-switch a {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* ---- categories page ---- */
+
+.categories-page h1 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 1.5rem;
+}
+
+.category-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+.category-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+}
+
+.category-card:hover {
+  transform: translateY(-2px);
+  border-color: transparent;
+  box-shadow: var(--shadow-card);
+}
+
+.category-name {
+  font-weight: 700;
+  color: var(--text);
+  text-transform: capitalize;
+}
+
+.category-count {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-tint);
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+}
+
+/* ---- prose (about / not-found) ---- */
+
+.prose {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  max-width: 640px;
+  margin-inline: auto;
+}
+
+.prose h1 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.prose h2 {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-top: 1.5rem;
+}
+
+.prose p {
+  color: var(--text-muted);
+  line-height: 1.65;
+}
+
+.prose ul {
+  margin: 0 0 1rem;
+  padding-left: 1.2rem;
+  color: var(--text-muted);
+  line-height: 1.8;
+}
+
+/* ---- landing page (separate from the app itself) ---- */
+
+.landing {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  position: relative;
+}
+
+.landing-logo {
+  position: absolute;
+  top: 32px;
+  left: 32px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.landing-hero {
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  position: relative;
+  z-index: 1;
+}
+
+.landing-hero h1 {
+  font-family: var(--font-display);
+  font-size: clamp(2.4rem, 6vw, 3.75rem);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  color: var(--text);
+}
+
+.landing-hero p {
+  font-size: 1.15rem;
+  color: var(--text-muted);
+  max-width: 520px;
+}
+
+.landing-cta {
+  padding: 16px 32px;
+  font-size: 1rem;
+  margin-top: 8px;
+}
+
+.landing-signin {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.landing-signin:hover {
+  color: var(--accent);
+}
+
+@media (max-width: 520px) {
+  .container {
+    padding: 24px 16px;
+  }
+
+  .detail,
+  .auth-panel,
+  .prose {
+    padding: 24px;
+  }
+
+  .detail-row {
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  .detail-row dt {
+    flex: none;
+  }
+}
