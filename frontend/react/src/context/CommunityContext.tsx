@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import { listCommunities, listUsers } from '../api/users'
+import { listCommunities } from '../api/users'
 import { useAuth } from '../auth/AuthContext'
 import { distanceKm, type Point } from '../lib/geo'
 import type { CommunityStat, Listing } from '../types'
@@ -42,21 +42,18 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const controller = new AbortController()
-    Promise.all([
-      listCommunities(controller.signal),
-      // Public profiles carry lat/lng; averaging them per community gives a
-      // town centre to measure distances from. One small request, cached.
-      listUsers({ limit: 200 }, controller.signal),
-    ])
-      .then(([communityRes, userRes]) => {
-        setCommunities(communityRes.data)
-        const sums = new Map<string, { lat: number; lng: number; n: number }>()
-        for (const u of userRes.data) {
-          if (!u.community || u.latitude == null || u.longitude == null) continue
-          const s = sums.get(u.community) ?? { lat: 0, lng: 0, n: 0 }
-          sums.set(u.community, { lat: s.lat + u.latitude, lng: s.lng + u.longitude, n: s.n + 1 })
-        }
-        setCentres(new Map([...sums].map(([name, s]) => [name, { lat: s.lat / s.n, lng: s.lng / s.n }])))
+    // Each community comes with its centre (rounded to ~1 km), which is all
+    // distances need - one small request, cached for offline.
+    listCommunities(controller.signal)
+      .then(({ data }) => {
+        setCommunities(data)
+        setCentres(
+          new Map(
+            data
+              .filter((c) => c.lat != null && c.lng != null)
+              .map((c) => [c.name, { lat: c.lat as number, lng: c.lng as number }]),
+          ),
+        )
       })
       .catch(() => {})
       .finally(() => setLoading(false))

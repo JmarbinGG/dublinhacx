@@ -1,189 +1,231 @@
-import type { Listing, SearchResponse, UserPublic } from '../types'
+import type { Listing, SearchResponse } from '../types'
 import { ApiError, isAbort, isNetworkError, request } from './client'
 import { cachedListings, readCache, writeCache } from './offlineCache'
 
 /**
- * One search bar. The client sends the query (plus any refinements) and
- * renders whatever comes back; the server decides whether it's a simple
- * keyword lookup or needs the AI. Proposed contract - see
- * FRONTEND_AI_CONTRACT.md:
+ * The one search bar: POST /api/search/smart (backend/routers/smart_search.py).
  *
- *   POST /api/search
- *   { q, refinements, exclude, community, filters, offset, limit, compact, allow_ai, search_id? }
- *   -> { route, ai, interpreted, suggestions, listings, users?, search_id?, offset, has_more }
+ *   new search  { q, community }
+ *   refine      { state, refine: "5", community }   - server parses the term
+ *   edit        { state }                            - e.g. a removed term or a filter
+ *   more        { state, offset }                    - no model call
  *
- * Fallbacks, in order: the old GET /api/search (route missing, error, timeout,
- * 429), then listings saved on this device (offline). Exactly one request is
- * in flight at a time - the caller aborts the previous one.
+ * The server decides simple vs complex and keeps no session: `state` comes
+ * back with every response and is sent back to refine or page, so a
+ * refinement costs a few hundred bytes. The client never interprets terms.
+ *
+ * Every request is cached by its exact body, so repeats, chip removals and
+ * the back button are free. Fallbacks: GET /api/search on any failure, then
+ * listings saved on the device when offline.
  */
 
 export const SMART_PAGE = 12
+const FRESH_MS = 15 * 60 * 1000
 
-export type Suggestion = { code: string; label: string }
-
-export type SmartRequest = {
+export type SearchState = {
   q: string
+  mode: 'simple' | 'complex'
+  terms: string[]
+  attrs: string[]
+  qty?: number | null
+  type?: string | null
+  kind?: string | null
+  exchange?: string | null
+  max_km?: number | null
+  need?: string | null
   refinements: string[]
-  /** Interpreted terms the user removed. */
-  exclude: string[]
-  community: string | null
-  filters: { type?: string; kind?: string; exchange?: string; scope?: string }
-  offset: number
-  search_id?: string
-  /** False when the user switched AI off in Data saver - simple route only. */
-  allow_ai: boolean
 }
 
-export type SmartResult = {
-  route: 'simple' | 'complex'
+export type Suggestion = { label: string; refine: string }
+
+export type SmartBody = {
+  q?: string
+  state?: SearchState
+  refine?: string
+  community?: string | null
+  limit?: number
+  offset?: number
+}
+
+export type SmartPage = {
+  mode: 'simple' | 'complex'
   ai: boolean
-  interpreted: string[]
+  state: SearchState
   suggestions: Suggestion[]
   listings: Listing[]
-  users: UserPublic[]
-  search_id?: string
-  offset: number
+  /** Per listing id: which interpreted term it matched (complex searches). */
+  matches: Record<number, string>
   has_more: boolean
-  /** Where the answer came from. */
-  source: 'smart' | 'plain' | 'offline' | 'demo'
-  /** One-line explanation when we fell back. */
+}
+
+export type SmartResult = SmartPage & {
+  source: 'smart' | 'plain' | 'offline'
   note: string | null
   cachedAt: number | null
 }
 
 const isString = (v: unknown): v is string => typeof v === 'string'
-const clip = (s: string, max: number) => s.slice(0, max)
+const strings = (v: unknown, max: number, len: number) =>
+  Array.isArray(v) ? v.filter(isString).map((s) => s.slice(0, len)).slice(0, max) : []
 
-/** Reject anything that doesn't match the contract; drop malformed rows. */
-function parse(raw: unknown): Omit<SmartResult, 'source' | 'note' | 'cachedAt'> {
-  const body = raw as Record<string, unknown> | null
-  if (!body || !Array.isArray(body.listings)) throw new ApiError('Unexpected search response.', 502)
-  const listings = body.listings.filter(
-    (l): l is Listing =>
-      !!l && typeof l === 'object' && Number.isInteger((l as Listing).id) && isString((l as Listing).title) &&
-      !!(l as Listing).owner && typeof (l as Listing).owner === 'object',
-  )
+type Card = {
+  id: number
+  title: string
+  type: string
+  kind: string
+  exchange: string
+  price?: string
+  quantity?: string
+  community?: string
+  distance_km?: number
+  image?: string
+  image_size_kb?: number
+  owner_id: number
+  owner_name: string
+  match?: string
+}
+
+/** Slim card -> the Listing shape the cards render. */
+function fromCard(c: Card): Listing {
   return {
-    route: body.route === 'complex' ? 'complex' : 'simple',
+    id: c.id,
+    title: c.title,
+    type: c.type as Listing['type'],
+    kind: c.kind as Listing['kind'],
+    exchange: c.exchange as Listing['exchange'],
+    price: c.price ?? null,
+    quantity: c.quantity ?? null,
+    image: c.image ?? null,
+    image_size_kb: c.image_size_kb ?? null,
+    distance_km: c.distance_km ?? null,
+    status: 'available',
+    tags: [],
+    created_at: '',
+    updated_at: '',
+    owner: { id: c.owner_id, name: c.owner_name, community: c.community ?? null },
+  }
+}
+
+/** Reject anything off-contract; drop malformed cards. */
+function parse(raw: unknown): SmartPage {
+  const body = raw as Record<string, unknown> | null
+  const state = body?.state as SearchState | undefined
+  if (!body || !Array.isArray(body.results) || !state || !isString(state.q)) {
+    throw new ApiError('Unexpected search response.', 502)
+  }
+  const cards = (body.results as Card[]).filter(
+    (c) => c && Number.isInteger(c.id) && isString(c.title) && Number.isInteger(c.owner_id) && isString(c.owner_name),
+  )
+  const matches: Record<number, string> = {}
+  for (const c of cards) if (isString(c.match)) matches[c.id] = c.match.slice(0, 40)
+  return {
+    mode: body.mode === 'complex' ? 'complex' : 'simple',
     ai: body.ai === true,
-    interpreted: Array.isArray(body.interpreted) ? body.interpreted.filter(isString).map((t) => clip(t, 40)).slice(0, 8) : [],
+    state: {
+      ...state,
+      mode: state.mode === 'complex' ? 'complex' : 'simple',
+      terms: strings(state.terms, 8, 40),
+      attrs: strings(state.attrs, 6, 30),
+      refinements: strings(state.refinements, 10, 100),
+      need: isString(state.need) ? state.need.slice(0, 120) : null,
+    },
     suggestions: Array.isArray(body.suggestions)
-      ? body.suggestions
-          .filter((s): s is Suggestion => !!s && isString((s as Suggestion).code) && isString((s as Suggestion).label))
-          .map((s) => ({ code: clip(s.code, 40), label: clip(s.label, 40) }))
-          .slice(0, 6)
+      ? (body.suggestions as Suggestion[])
+          .filter((s) => s && isString(s.label) && isString(s.refine))
+          .map((s) => ({ label: s.label.slice(0, 40), refine: s.refine.slice(0, 100) }))
+          .slice(0, 5)
       : [],
-    listings,
-    users: Array.isArray(body.users) ? (body.users as UserPublic[]).filter((u) => u && Number.isInteger(u.id)).slice(0, 12) : [],
-    search_id: isString(body.search_id) && body.search_id.length <= 128 ? body.search_id : undefined,
-    offset: typeof body.offset === 'number' ? body.offset : 0,
+    listings: cards.map(fromCard),
+    matches,
     has_more: body.has_more === true,
   }
 }
 
-/** Normalised cache key: same query + refinements => same entry (back button, repeats). */
-function keyOf(req: SmartRequest) {
-  const norm = (s: string) => s.trim().toLowerCase()
-  return `smart:${JSON.stringify([norm(req.q), req.refinements.map(norm), req.exclude.map(norm), req.community, req.filters, req.offset])}`
-}
-
-function words(text: string) {
-  return text.toLowerCase().split(/\s+/).filter(Boolean)
-}
-
-/** Old endpoint: refinements become extra keywords (every word must match). */
-async function plainSearch(req: SmartRequest, signal?: AbortSignal) {
-  const limit = req.offset + SMART_PAGE
-  const res = await request<SearchResponse>('/api/search', {
-    params: { q: [req.q, ...req.refinements].join(' '), type: req.filters.type, limit },
-    signal,
-  })
-  return {
-    listings: res.listings.slice(req.offset),
-    users: req.offset === 0 ? res.users : [],
-    has_more: res.listings.length >= limit,
+/** One request to /api/search/smart, served from cache when fresh. */
+export async function smartStep(body: SmartBody, token: string | null, signal?: AbortSignal): Promise<SmartResult> {
+  const key = `smart:${JSON.stringify({ ...body, limit: body.limit ?? SMART_PAGE })}`
+  const cached = readCache<SmartPage>(key)
+  if (cached && Date.now() - cached.savedAt < FRESH_MS) {
+    return { ...cached.data, source: 'smart', note: null, cachedAt: null }
+  }
+  try {
+    const raw = await request<unknown>('/api/search/smart', {
+      method: 'POST',
+      json: { ...body, limit: body.limit ?? SMART_PAGE },
+      token,
+      signal,
+      timeoutMs: 20_000,
+    })
+    const page = parse(raw)
+    writeCache(key, page)
+    return { ...page, source: 'smart', note: null, cachedAt: null }
+  } catch (error) {
+    // Offline with an older copy of exactly this step: use it, with its age.
+    if (cached && isNetworkError(error)) return { ...cached.data, source: 'offline', note: null, cachedAt: cached.savedAt }
+    throw error
   }
 }
 
-/** Offline: match every word of the query and refinements against saved listings. */
-function localSearch(req: SmartRequest) {
+// ---------- fallbacks ----------
+
+const words = (text: string) => text.toLowerCase().split(/\s+/).filter(Boolean)
+const emptyState = (q: string): SearchState => ({ q, mode: 'simple', terms: [], attrs: [], refinements: [] })
+
+/** Plain keyword search on the old endpoint: refinements become extra words. */
+export async function plainFallback(
+  q: string,
+  refinements: string[],
+  offset: number,
+  error: unknown,
+  signal?: AbortSignal,
+): Promise<SmartResult> {
+  if (isAbort(error)) throw error
+  const offline = isNetworkError(error) && !navigator.onLine
+  if (!offline) {
+    try {
+      const res = await request<SearchResponse>('/api/search', {
+        params: { q: [q, ...refinements].join(' '), limit: SMART_PAGE, offset },
+        signal,
+      })
+      return {
+        mode: 'simple',
+        ai: false,
+        state: emptyState(q),
+        suggestions: [],
+        listings: res.listings,
+        matches: {},
+        has_more: res.listings.length >= SMART_PAGE,
+        source: 'plain',
+        note:
+          error instanceof ApiError && error.status === 429
+            ? `Search is busy${error.retryAfter ? ` for about ${error.retryAfter} s` : ''}. Showing plain keyword results.`
+            : 'Smart search is unavailable right now. Showing plain keyword results.',
+        cachedAt: null,
+      }
+    } catch (plainError) {
+      if (isAbort(plainError) || !isNetworkError(plainError)) throw plainError
+    }
+  }
+
+  // Offline (or server unreachable): every word against listings saved on the device.
   const { rows, savedAt } = cachedListings<Listing>()
-  const needles = words([req.q, ...req.refinements].join(' '))
+  const needles = words([q, ...refinements].join(' '))
   const hits = rows.filter((l) => {
     const hay = [l.title, l.description, l.category, l.quantity, l.price, l.exchange, l.owner?.community, ...(l.tags ?? [])]
       .join(' ')
       .toLowerCase()
     return needles.every((n) => hay.includes(n))
   })
-  return { hits, savedAt }
-}
-
-const base = { route: 'simple' as const, ai: false, interpreted: [], suggestions: [], search_id: undefined }
-
-export async function smartSearch(req: SmartRequest, token: string | null, signal?: AbortSignal): Promise<SmartResult> {
-  const key = keyOf(req)
-
-  try {
-    const raw = await request<unknown>('/api/search', {
-      method: 'POST',
-      json: { ...req, limit: SMART_PAGE, compact: true },
-      token,
-      signal,
-      timeoutMs: 20_000,
-    })
-    const data = parse(raw)
-    writeCache(key, data)
-    return { ...data, source: 'smart', note: null, cachedAt: null }
-  } catch (error) {
-    if (isAbort(error)) throw error
-
-    // Route not on the backend yet (404/405): in dev, a labelled demo.
-    if (import.meta.env.DEV && error instanceof ApiError && (error.status === 404 || error.status === 405)) {
-      const { mockSmartSearch } = await import('./smartSearchMock')
-      const data = parse(await mockSmartSearch(req, signal))
-      return { ...data, source: 'demo', note: null, cachedAt: null }
-    }
-
-    // Offline: a saved copy of this exact search, else match saved listings.
-    if (isNetworkError(error) && !navigator.onLine) {
-      const cached = readCache<Omit<SmartResult, 'source' | 'note' | 'cachedAt'>>(key)
-      if (cached) return { ...cached.data, source: 'offline', note: null, cachedAt: cached.savedAt }
-      const { hits, savedAt } = localSearch(req)
-      return {
-        ...base,
-        listings: hits.slice(req.offset, req.offset + SMART_PAGE),
-        users: [],
-        offset: req.offset,
-        has_more: hits.length > req.offset + SMART_PAGE,
-        source: 'offline',
-        note: "You're offline - showing matches from listings saved on this phone.",
-        cachedAt: savedAt,
-      }
-    }
-
-    // Anything else (error, timeout, 429): plain keyword results.
-    const note =
-      error instanceof ApiError && error.status === 429
-        ? `Search is busy${error.retryAfter ? ` - smart search is back in ${error.retryAfter} s` : ''}. Showing plain keyword results.`
-        : 'Smart search is unavailable right now. Showing plain keyword results.'
-    try {
-      const plain = await plainSearch(req, signal)
-      return { ...base, ...plain, offset: req.offset, source: 'plain', note, cachedAt: null }
-    } catch (plainError) {
-      if (!isNetworkError(plainError)) throw plainError
-      // Server unreachable even though the phone thinks it's online.
-      const { hits, savedAt } = localSearch(req)
-      if (!hits.length) throw plainError
-      return {
-        ...base,
-        listings: hits.slice(req.offset, req.offset + SMART_PAGE),
-        users: [],
-        offset: req.offset,
-        has_more: hits.length > req.offset + SMART_PAGE,
-        source: 'offline',
-        note: "Can't reach Banyan - showing matches from listings saved on this phone.",
-        cachedAt: savedAt,
-      }
-    }
+  return {
+    mode: 'simple',
+    ai: false,
+    state: emptyState(q),
+    suggestions: [],
+    listings: hits.slice(offset, offset + SMART_PAGE),
+    matches: {},
+    has_more: hits.length > offset + SMART_PAGE,
+    source: 'offline',
+    note: "You're offline - showing matches from listings saved on this phone.",
+    cachedAt: savedAt,
   }
 }

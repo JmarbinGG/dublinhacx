@@ -86,6 +86,8 @@ export type ListingInput = {
   quantity?: string | null
   exchange: ExchangeType
   price?: string | null
+  /** Offline-queued posts send their queue id; re-sending returns the existing listing. */
+  client_id?: string
 }
 
 export function createListing(input: ListingInput, token: string): Promise<Listing> {

@@ -82,7 +82,12 @@ export type Listing = {
 }
 
 export type CommunityStat = {
+  /** Slug, e.g. "palm-grove". */
+  id?: string
   name: string
+  /** Community centre, rounded to ~1 km. */
+  lat?: number | null
+  lng?: number | null
   members: number
   listings: number
 }

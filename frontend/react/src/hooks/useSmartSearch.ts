@@ -1,11 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { isAbort } from '../api/client'
-import { smartSearch, type SmartRequest, type SmartResult } from '../api/smartSearch'
+import { plainFallback, smartStep, type SearchState, type SmartResult } from '../api/smartSearch'
 import type { Listing } from '../types'
 
+export type SmartInput = {
+  q: string
+  /** Raw refinement terms, oldest first - sent one per step, never interpreted here. */
+  refinements: string[]
+  /** Interpreted terms the user removed. */
+  exclude: string[]
+  /** Inline filters that override the server's state when set. */
+  filters: { type?: string; kind?: string; exchange?: string; maxKm?: number }
+  community: string | null
+}
+
 type State = {
-  /** Metadata from the latest page (route, interpreted terms, suggestions...). */
-  meta: SmartResult | null
+  result: SmartResult | null
   listings: Listing[] | null
   loading: boolean
   loadingMore: boolean
@@ -13,60 +23,88 @@ type State = {
   cancelled: boolean
 }
 
-const IDLE: State = { meta: null, listings: null, loading: false, loadingMore: false, error: null, cancelled: false }
+const IDLE: State = { result: null, listings: null, loading: false, loadingMore: false, error: null, cancelled: false }
+
+/** Apply removed terms and inline filters to the server's state. Returns
+ * null when nothing changes (no extra request needed). */
+function edit(state: SearchState, input: SmartInput): SearchState | null {
+  const next: SearchState = { ...state, terms: state.terms.filter((t) => !input.exclude.includes(t)) }
+  const f = input.filters
+  if (f.type) next.type = f.type
+  if (f.kind) next.kind = f.kind
+  if (f.exchange) next.exchange = f.exchange
+  if (f.maxKm) next.max_km = f.maxKm
+  // Removing every interpreted term would search for nothing - keep at least one.
+  if (next.terms.length === 0) next.terms = state.terms.slice(0, 1)
+  return JSON.stringify(next) === JSON.stringify(state) ? null : next
+}
 
 /**
- * Runs the one search bar's request. Only one request is ever in flight -
- * a new query, refinement or Cancel aborts the previous one, so data is
- * never spent twice. "Show more" fetches the next 12 and appends.
+ * Drives the one search bar. A search is a short chain of small requests:
+ * the query, then one step per refinement, then one edit step if terms were
+ * removed or filters set. Each step is cached by its exact body, so
+ * removing the last refinement or going back costs nothing. Only one
+ * request is ever in flight; a change or Cancel aborts the chain.
  */
-export function useSmartSearch(req: Omit<SmartRequest, 'offset' | 'search_id'> | null, token: string | null) {
+export function useSmartSearch(input: SmartInput | null, token: string | null) {
   const [state, setState] = useState<State>(IDLE)
   const controllerRef = useRef<AbortController | null>(null)
-  const key = req ? JSON.stringify(req) : null
   const [attempt, setAttempt] = useState(0)
-  // When only the refinements change, send the server's search_id so it can
-  // refine what it already has instead of starting over.
-  const lastRef = useRef<{ q: string; search_id?: string }>({ q: '' })
+  const key = input ? JSON.stringify(input) : null
 
   useEffect(() => {
     controllerRef.current?.abort()
     if (!key) return
     const controller = new AbortController()
     controllerRef.current = controller
-    // Keep showing the previous results (dimmed) while the new ones load.
+    const signal = controller.signal
+    const req = JSON.parse(key) as SmartInput
     setState((prev) => ({ ...prev, loading: true, error: null, cancelled: false }))
 
-    const next = JSON.parse(key) as SmartRequest
-    const search_id = lastRef.current.q === next.q ? lastRef.current.search_id : undefined
-    smartSearch({ ...next, offset: 0, search_id }, token, controller.signal)
-      .then((meta) => {
-        lastRef.current = { q: next.q, search_id: meta.search_id }
-        setState({ meta, listings: meta.listings, loading: false, loadingMore: false, error: null, cancelled: false })
+    ;(async () => {
+      const community = req.community
+      let res = await smartStep({ q: req.q, community }, token, signal)
+      for (const term of req.refinements) {
+        res = await smartStep({ state: res.state, refine: term, community }, token, signal)
+      }
+      const edited = edit(res.state, req)
+      if (edited) res = await smartStep({ state: edited, community }, token, signal)
+      return res
+    })()
+      .catch((error: unknown) => plainFallback(req.q, req.refinements, 0, error, signal))
+      .then((result) => {
+        if (!signal.aborted) {
+          setState({ result, listings: result.listings, loading: false, loadingMore: false, error: null, cancelled: false })
+        }
       })
       .catch((error: unknown) => {
-        if (isAbort(error)) return
+        if (isAbort(error) || signal.aborted) return
         setState({ ...IDLE, error: error instanceof Error ? error.message : 'Search failed.' })
       })
+
     return () => controller.abort()
   }, [key, token, attempt])
 
   const loadMore = useCallback(() => {
-    if (!key || state.loading || state.loadingMore || !state.meta?.has_more) return
+    const current = state.result
+    if (!key || !current?.has_more || state.loading || state.loadingMore) return
     const controller = new AbortController()
     controllerRef.current = controller
+    const req = JSON.parse(key) as SmartInput
+    const offset = state.listings?.length ?? 0
     setState((prev) => ({ ...prev, loadingMore: true }))
-    // Refine/paging send the search_id (if any) - never the result list.
-    smartSearch(
-      { ...(JSON.parse(key) as SmartRequest), offset: state.listings?.length ?? 0, search_id: state.meta.search_id },
-      token,
-      controller.signal,
-    )
-      .then((meta) =>
+
+    // Paging sends the state back - never the result list.
+    const page =
+      current.source === 'smart'
+        ? smartStep({ state: current.state, offset, community: req.community }, token, controller.signal)
+        : plainFallback(req.q, req.refinements, offset, new Error('fallback'), controller.signal)
+    page
+      .then((more) =>
         setState((prev) => ({
           ...prev,
-          meta,
-          listings: [...(prev.listings ?? []), ...meta.listings.filter((l) => !prev.listings?.some((p) => p.id === l.id))],
+          result: { ...more, matches: { ...prev.result?.matches, ...more.matches } },
+          listings: [...(prev.listings ?? []), ...more.listings.filter((l) => !prev.listings?.some((p) => p.id === l.id))],
           loadingMore: false,
         })),
       )
@@ -74,7 +112,7 @@ export function useSmartSearch(req: Omit<SmartRequest, 'offset' | 'search_id'> |
         if (isAbort(error)) return
         setState((prev) => ({ ...prev, loadingMore: false, error: error instanceof Error ? error.message : 'Search failed.' }))
       })
-  }, [key, token, state.loading, state.loadingMore, state.meta, state.listings])
+  }, [key, token, state.result, state.listings, state.loading, state.loadingMore])
 
   const cancel = useCallback(() => {
     controllerRef.current?.abort()

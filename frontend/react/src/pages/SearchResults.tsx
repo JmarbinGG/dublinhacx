@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { PAGE_SIZE } from '../api/listings'
 import { useAuth } from '../auth/AuthContext'
-import Avatar from '../components/Avatar'
 import FilterBar from '../components/FilterBar'
 import Icon from '../components/Icon'
 import ItemGrid from '../components/ItemGrid'
 import { SkeletonGrid } from '../components/States'
-import { useCommunities } from '../context/CommunityContext'
+import { NEARBY_KM, useCommunities } from '../context/CommunityContext'
 import { useDataBudget } from '../context/DataBudgetContext'
 import { useListings } from '../hooks/useItems'
 import { useSmartSearch } from '../hooks/useSmartSearch'
@@ -19,9 +18,9 @@ const MAX_PAGES = 8
 const MAX_REFINEMENTS = 5
 
 /**
- * /search. With a query, the one search bar's request goes to the server,
- * which decides simple vs complex (AI). Without one - or with "plain search"
- * on - it's the filterable browse feed from /api/listings.
+ * /search. With a query, the one search bar goes to POST /api/search/smart,
+ * where the server decides simple vs complex (AI). Without one - or with
+ * plain search / AI off - it's the filterable browse feed from /api/listings.
  *
  * URL: q, r (refinements, repeated), x (interpreted terms removed, repeated),
  * plus the filter params. So the back button and repeat searches reuse the
@@ -37,20 +36,21 @@ export default function SearchResults() {
   const refinements = params.getAll('r')
   const excluded = params.getAll('x')
 
+  // AI switched off in Data saver => plain keyword search only.
+  const usingSmart = !!filters.q && !plain && aiAnswers
   const smart = useSmartSearch(
-    filters.q && !plain
+    usingSmart
       ? {
           // Contact details never leave the device, even inside a query.
           q: redactPersonal(filters.q).text,
           refinements: refinements.map((r) => redactPersonal(r).text),
           exclude: excluded,
           community: home,
-          allow_ai: aiAnswers,
           filters: {
             type: filters.type || undefined,
             kind: filters.kind || undefined,
             exchange: filters.exchange || undefined,
-            scope: filters.scope === 'all' ? undefined : filters.scope,
+            maxKm: filters.scope === 'near' ? NEARBY_KM : undefined,
           },
         }
       : null,
@@ -59,8 +59,8 @@ export default function SearchResults() {
 
   // Browse feed (no query, or plain search chosen).
   const page = Math.min(MAX_PAGES, Math.max(1, Number(params.get('page')) || 1))
-  const browseQuery = toListingQuery(plain ? filters : { ...filters, q: '' }, home, homePoint, PAGE_SIZE * page)
-  const browse = useListings(filters.q && !plain ? null : browseQuery)
+  const browseQuery = toListingQuery(filters, home, homePoint, PAGE_SIZE * page)
+  const browse = useListings(usingSmart ? null : browseQuery)
   const browseListings = browse.data ? filterExchange(browse.data, filters.exchange) : null
 
   function update(mutate: (next: URLSearchParams) => void, replace = false) {
@@ -88,8 +88,8 @@ export default function SearchResults() {
     if (filters.q) headingRef.current?.focus()
   }, [filters.q])
 
-  const usingSmart = !!filters.q && !plain
-  const meta = smart.meta
+  const meta = smart.result
+  const notes = meta ? new Map(Object.entries(meta.matches).map(([id, term]) => [Number(id), `Matches: ${term}`])) : undefined
   const listings = usingSmart ? smart.listings : browseListings
 
   return (
@@ -101,17 +101,15 @@ export default function SearchResults() {
           {filters.q ? <>Results for "{filters.q}"</> : 'Everything shared'}
           {listings && <span className="count">{listings.length}{(usingSmart ? meta?.has_more : false) && '+'}</span>}
         </h1>
-        {usingSmart && meta?.ai && (
-          <span className="hint">AI-assisted, may be wrong{meta.source === 'demo' && ' · demo, AI not connected yet'}</span>
-        )}
+        {usingSmart && meta?.ai && <span className="hint">AI-assisted, may be wrong</span>}
       </div>
 
       {usingSmart && (
         <>
-          {meta?.route === 'complex' && meta.interpreted.length > 0 && (
+          {meta?.mode === 'complex' && meta.state.terms.length > 0 && (
             <div className="interpreted" aria-label="What we searched for">
-              <span className="hint">Searched for:</span>
-              {meta.interpreted.map((term) => (
+              <span className="hint">{meta.state.need ? `To ${meta.state.need}, searched for:` : 'Searched for:'}</span>
+              {meta.state.terms.map((term) => (
                 <span key={term} className="chip chip--removable">
                   {term}
                   <button type="button" aria-label={`Don't search for ${term}`} onClick={() => removeInterpreted(term)}>
@@ -130,7 +128,7 @@ export default function SearchResults() {
           <RefineBar
             query={filters.q}
             refinements={refinements}
-            suggestions={(meta?.suggestions ?? []).filter((s) => !refinements.includes(s.code))}
+            suggestions={(meta?.suggestions ?? []).filter((s) => !refinements.includes(s.refine))}
             onAdd={addRefinement}
             onRemove={removeRefinement}
             onClear={() => update((next) => next.delete('r'))}
@@ -174,22 +172,6 @@ export default function SearchResults() {
         </p>
       )}
 
-      {usingSmart && meta && meta.users.length > 0 && (
-        <ul className="people" aria-label="People">
-          {meta.users.slice(0, 6).map((person) => (
-            <li key={person.id}>
-              <Link to={`/users/${person.id}`} className="person">
-                <Avatar name={person.name} size="sm" />
-                <span>
-                  {person.name}
-                  {person.community && <span className="person__town"> · {person.community}</span>}
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
-
       <h2 className="visually-hidden">Listings</h2>
       {usingSmart && smart.loading && !smart.listings ? (
         <SkeletonGrid count={2} />
@@ -206,6 +188,7 @@ export default function SearchResults() {
               : 'Nothing matches these filters yet.'
           }
           onRetry={usingSmart ? smart.retry : browse.reload}
+          notes={usingSmart ? notes : undefined}
         />
       )}
 
@@ -234,7 +217,7 @@ export default function SearchResults() {
 type RefineProps = {
   query: string
   refinements: string[]
-  suggestions: { code: string; label: string }[]
+  suggestions: { label: string; refine: string }[]
   onAdd: (term: string) => void
   onRemove: (term: string) => void
   onClear: () => void
@@ -274,7 +257,7 @@ function RefineBar({ query, refinements, suggestions, onAdd, onRemove, onClear, 
 
       <div className="refine__row">
         {suggestions.map((s) => (
-          <button key={s.code} type="button" className="chip" disabled={full} onClick={() => onAdd(s.code)}>
+          <button key={s.refine} type="button" className="chip" disabled={full} onClick={() => onAdd(s.refine)}>
             + {s.label}
           </button>
         ))}
