@@ -1,7 +1,9 @@
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, field_validator
+
+import storage
 
 BIO_MAX = 280
 
@@ -32,6 +34,12 @@ class UserSummary(BaseModel):
     name: str
     photo: Optional[str] = None
     community: Optional[str] = None
+
+    @computed_field
+    @property
+    def photo_size_kb(self) -> Optional[int]:
+        """KB on disk for our own uploads; None for external URLs."""
+        return storage.size_kb(self.photo)
 
 
 class UserPublic(UserSummary):
@@ -102,7 +110,29 @@ class ListingBase(BaseModel):
 
 
 class ListingCreate(ListingBase):
-    pass
+    # Client-generated id (e.g. a UUID) for offline-queued posts. Re-sending
+    # the same client_id returns the existing listing instead of a duplicate.
+    client_id: Optional[str] = Field(None, min_length=1, max_length=64)
+
+
+class BatchEntry(BaseModel):
+    client_id: str = Field(min_length=1, max_length=64)
+    listing: dict  # validated per entry, so one bad entry doesn't fail the batch
+
+
+class BatchRequest(BaseModel):
+    entries: list[BatchEntry] = Field(max_length=50)
+
+
+class BatchResult(BaseModel):
+    client_id: str
+    status: Literal["created", "duplicate", "error"]
+    listing_id: Optional[int] = None
+    detail: Optional[str] = None
+
+
+class BatchResponse(BaseModel):
+    results: list[BatchResult]
 
 
 class ListingUpdate(BaseModel):
@@ -131,6 +161,12 @@ class ListingOut(ListingBase):
     owner: UserSummary
     # Only set when the request passed lat/lng to sort by distance.
     distance_km: Optional[float] = None
+
+    @computed_field
+    @property
+    def image_size_kb(self) -> Optional[int]:
+        """KB on disk for our own uploads; None for external URLs."""
+        return storage.size_kb(self.image)
 
 
 class ProfileOut(UserPublic):

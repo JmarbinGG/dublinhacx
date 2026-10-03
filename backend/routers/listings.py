@@ -2,13 +2,18 @@ import math
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import ValidationError
 from sqlalchemy import or_
 from sqlalchemy.orm import Query as OrmQuery, Session as DbSession, joinedload
 
 from auth import current_user
 from database import get_db
 from models import Listing, User
+from storage import delete_if_orphaned
 from schemas import (
+    BatchRequest,
+    BatchResponse,
+    BatchResult,
     ListingCreate,
     ListingKind,
     ListingOut,
@@ -141,15 +146,56 @@ def get_listing(listing_id: int, db: DbSession = Depends(get_db)):
     return listing_out(listing)
 
 
-@router.post("", response_model=ListingOut, status_code=201)
-def create_listing(body: ListingCreate, user: User = Depends(current_user), db: DbSession = Depends(get_db)):
+def _create(db: DbSession, body: ListingCreate, user: User) -> tuple[Listing, bool]:
+    """Insert a listing, or return the existing one if this owner already
+    posted the same client_id. Returns (listing, created)."""
+    if body.client_id:
+        existing = (
+            db.query(Listing)
+            .filter(Listing.owner_id == user.id, Listing.client_id == body.client_id)
+            .first()
+        )
+        if existing:
+            return existing, False
     data = body.model_dump()
     data["tags"] = ",".join(data["tags"]) or None
     listing = Listing(**data, owner_id=user.id)
     db.add(listing)
     db.commit()
     db.refresh(listing)
-    return listing_out(listing)
+    return listing, True
+
+
+@router.post("", response_model=ListingOut, status_code=201)
+def create_listing(body: ListingCreate, user: User = Depends(current_user), db: DbSession = Depends(get_db)):
+    return listing_out(_create(db, body, user)[0])
+
+
+@router.post("/batch", response_model=BatchResponse)
+def create_listings_batch(
+    body: BatchRequest, user: User = Depends(current_user), db: DbSession = Depends(get_db)
+):
+    """Replay listings queued while offline. Idempotent per client_id: an
+    entry that was already created comes back as "duplicate" with its id.
+    Entries are independent - one invalid entry doesn't block the rest."""
+    results = []
+    for entry in body.entries:
+        try:
+            listing_body = ListingCreate.model_validate({**entry.listing, "client_id": entry.client_id})
+        except ValidationError as e:
+            err = e.errors()[0]
+            field = ".".join(str(p) for p in err["loc"])
+            results.append(BatchResult(client_id=entry.client_id, status="error", detail=f"{field}: {err['msg']}"))
+            continue
+        listing, created = _create(db, listing_body, user)
+        results.append(
+            BatchResult(
+                client_id=entry.client_id,
+                status="created" if created else "duplicate",
+                listing_id=listing.id,
+            )
+        )
+    return BatchResponse(results=results)
 
 
 @router.patch("/{listing_id}", response_model=ListingOut)
@@ -166,15 +212,21 @@ def update_listing(
             raise HTTPException(status_code=422, detail=f"{required} can't be null")
     if "tags" in changes:
         changes["tags"] = ",".join(changes["tags"] or []) or None
+    old_image = listing.image
     for field, value in changes.items():
         setattr(listing, field, value)
     db.commit()
     db.refresh(listing)
+    if listing.image != old_image:
+        delete_if_orphaned(db, old_image)
     return listing_out(listing)
 
 
 @router.delete("/{listing_id}")
 def delete_listing(listing_id: int, user: User = Depends(current_user), db: DbSession = Depends(get_db)):
-    db.delete(owned_listing(db, listing_id, user))
+    listing = owned_listing(db, listing_id, user)
+    image = listing.image
+    db.delete(listing)
     db.commit()
+    delete_if_orphaned(db, image)
     return {"status": "deleted"}

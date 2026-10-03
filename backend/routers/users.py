@@ -8,6 +8,7 @@ from auth import current_user
 from database import get_db
 from models import Listing, User
 from routers.listings import haversine_km, listing_out
+from storage import delete_if_orphaned
 from schemas import CommunityOut, ProfileOut, UserPrivate, UserPublic, UserUpdate
 
 router = APIRouter(tags=["users"])
@@ -50,10 +51,13 @@ def update_me(body: UserUpdate, user: User = Depends(current_user), db: DbSessio
     changes = body.model_dump(exclude_unset=True)
     if "name" in changes and not changes["name"]:
         raise HTTPException(status_code=422, detail="name can't be empty")
+    old_photo = user.photo
     for field, value in changes.items():
         setattr(user, field, value)
     db.commit()
     db.refresh(user)
+    if user.photo != old_photo:
+        delete_if_orphaned(db, old_photo)
     return UserPrivate.model_validate(user)
 
 
