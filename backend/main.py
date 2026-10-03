@@ -4,12 +4,14 @@ load_dotenv()  # before anything reads os.getenv (DATABASE_URL, LLM_SERVICE_URL,
 
 import os
 
-from fastapi import FastAPI, Request
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
 
@@ -104,6 +106,27 @@ def meta():
     keys so a backend fix shows up immediately instead of after the cache
     expires."""
     return {"search_version": SEARCH_VERSION}
+
+
+# Hosting: serve the built frontend (npm run build) from this same origin, so
+# one tunnel/domain carries both and no CORS is needed. Skipped in dev when
+# there's no build. FRONTEND_DIST overrides the location.
+FRONTEND_DIST = Path(os.getenv("FRONTEND_DIST", Path(__file__).resolve().parent.parent / "frontend" / "react" / "dist")).resolve()
+
+if (FRONTEND_DIST / "index.html").is_file():
+
+    @app.api_route("/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
+    def frontend(path: str):
+        if path.startswith(("api/", "uploads/")):
+            raise HTTPException(status_code=404)
+        file = (FRONTEND_DIST / path).resolve()
+        if path and file.is_file() and file.is_relative_to(FRONTEND_DIST):
+            # Vite's hashed assets never change; everything else (sw.js,
+            # favicon) must revalidate so a new deploy shows up.
+            immutable = path.startswith("assets/")
+            return FileResponse(file, headers={"Cache-Control": "public, max-age=31536000, immutable" if immutable else "no-cache"})
+        # Client-side routes (/listing/12, /profile) all load the app shell.
+        return FileResponse(FRONTEND_DIST / "index.html", headers={"Cache-Control": "no-cache"})
 
 
 if __name__ == "__main__":
