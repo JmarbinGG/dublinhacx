@@ -117,22 +117,32 @@ def complete_json(
     if os.getenv("LLM_API_KEY"):
         headers["Authorization"] = f"Bearer {os.getenv('LLM_API_KEY')}"
     deadline = min(timeout or AI_TIMEOUT_S, AI_TIMEOUT_S)
+    live: dict = {}
 
     def post():
+        # stream=True returns as soon as headers arrive, so the response is
+        # reachable from the caller while the body is still being read.
         resp = requests.post(
             f"{url.rstrip('/')}/chat/completions",
             json=_body(messages, model or big_model(), max_tokens),
             headers=headers,
             timeout=(5, deadline + 5),  # backstop; the future's deadline is what counts
+            stream=True,
         )
-        resp.raise_for_status()
-        return resp.json()
+        live["resp"] = resp
+        with resp:
+            resp.raise_for_status()
+            return json.loads(resp.content)
 
     try:
         body = _POOL.submit(post).result(timeout=deadline)
         content = body["choices"][0]["message"]["content"] or ""
         used = (body.get("usage") or {}).get("total_tokens")
     except FutureTimeout:
+        # Drop the connection so the provider stops generating - an abandoned
+        # request would otherwise keep holding one of our concurrency slots.
+        if "resp" in live:
+            live["resp"].close()
         raise LLMError(f"LLM call exceeded {deadline:.0f}s") from None
     except (requests.RequestException, ValueError, KeyError, IndexError, TypeError) as e:
         raise LLMError(f"LLM call failed: {type(e).__name__}: {redact(str(e))[:300]}") from None

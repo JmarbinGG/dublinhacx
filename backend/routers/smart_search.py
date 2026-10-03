@@ -62,8 +62,9 @@ DEFAULT_LIMIT = 12
 MAX_LIMIT = 24
 CANDIDATE_CAP = 300
 MAX_TERMS = 8
-SMALL_TIMEOUT_S = 5
-BIG_TIMEOUT_S = 9  # small + big stays under the client's 15-20s timeout
+SMALL_TIMEOUT_S = 4
+BIG_TIMEOUT_S = 11
+REQUEST_BUDGET_S = 17  # all model calls for one request; the client gives up at 20s
 NEAR_KM = 25
 CACHE_SIZE = 512
 CACHE_TTL_S = 3600
@@ -392,14 +393,17 @@ def _categories(db: DbSession) -> list[str]:
 
 
 class _ModelBudget:
-    """Model calls for one request: off when unconfigured, rate limited, or
-    once a call has failed (don't stack timeouts)."""
+    """Model calls for one request: off when unconfigured or rate limited,
+    and every call shares one deadline so a slow model can't push the
+    request past the client's timeout."""
 
     def __init__(self, request: Request, user: Optional[User]):
         self.request, self.user = request, user
         self.enabled = llm.configured()
         self.checked = False
         self.used = False
+        self.deadline = time.monotonic() + REQUEST_BUDGET_S
+        self.degraded = False  # an answer came from a fallback - don't cache it
 
     def allow(self) -> bool:
         if self.enabled and not self.checked:
@@ -408,16 +412,15 @@ class _ModelBudget:
         return self.enabled
 
     def call(self, messages, schema, timeout, model):
-        if not self.allow():
+        remaining = self.deadline - time.monotonic()
+        if not self.allow() or remaining < 1.5:
             return None
         try:
-            out, _ = llm.complete_json(messages, schema, timeout=timeout, model=model, max_tokens=250)
+            out, _ = llm.complete_json(messages, schema, timeout=min(timeout, remaining), model=model, max_tokens=250)
             self.used = True
             return out
         except llm.LLMError as e:
-            log.warning("Smart search model call failed: %s", e)
-            if not e.invalid:  # timeout/network/budget: don't stack more waits
-                self.enabled = False
+            log.warning("Smart search model call failed (%s): %s", model, e)
             return None
 
 
@@ -450,23 +453,30 @@ def new_search(db: DbSession, q: str, models: _ModelBudget) -> tuple[SearchState
     complex_ = route.mode == "complex" if route is not None else len(stems) > 1
 
     # 2. Big model: what does a complex search actually need?
+    expanded = None
     if complex_:
         expanded = expand_search(db, q, word_state, models)
-        state = expanded or word_state  # big model unavailable: search the meaningful words
+        state = expanded or word_state  # no model could help: search the meaningful words
         used = used or expanded is not None
 
-    if used:
+    # Only cache answers the models fully produced - a timeout today
+    # shouldn't pin a worse result for the next hour.
+    if used and (not complex_ or expanded is not None) and not models.degraded:
         _store(key, state.model_dump())
     return state, used
 
 
 def expand_search(db: DbSession, q: str, base: SearchState, models: _ModelBudget) -> Optional[SearchState]:
-    """Ask the big model what a goal needs. None if it couldn't help."""
-    expand = models.call(
-        [{"role": "system", "content": EXPAND_PROMPT},
-         {"role": "user", "content": f"Shopper's goal:\n{fence(q)}\n\nCategories on Banyan:\n{fence(_categories(db))}"}],
-        _Expand, BIG_TIMEOUT_S, llm.big_model(),
-    )
+    """Ask the big model what a goal needs - or, if it's slow or fails, the
+    small one with whatever time is left. None if neither could help."""
+    messages = [
+        {"role": "system", "content": EXPAND_PROMPT},
+        {"role": "user", "content": f"Shopper's goal:\n{fence(q)}\n\nCategories on Banyan:\n{fence(_categories(db))}"},
+    ]
+    expand = models.call(messages, _Expand, BIG_TIMEOUT_S, llm.big_model())
+    if (expand is None or not expand.terms) and llm.small_model() != llm.big_model():
+        expand = models.call(messages, _Expand, SMALL_TIMEOUT_S, llm.small_model())
+        models.degraded = True  # small model's guess: fine to show, not to cache
     terms = [p for t in _clean_word_list(expand.terms, 6, 40) if (p := stem_phrase(t))] if expand else []
     if not terms:
         return None
@@ -658,7 +668,8 @@ def smart_search(
         expanded = expand_search(db, state.q, state, models)
         if expanded is not None:
             state = expanded
-            _store("new:" + " ".join(state.q.lower().split()), state.model_dump())
+            if not models.degraded:
+                _store("new:" + " ".join(state.q.lower().split()), state.model_dump())
             cards, has_more = run_state(db, state, origin, body.limit, body.offset)
     return SmartSearchResponse(
         mode=state.mode,
