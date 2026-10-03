@@ -77,6 +77,8 @@ export type Listing = {
   owner: UserSummary
   /** Only set when the request passed lat/lng. */
   distance_km?: number | null
+  /** Photo size, when the backend sends it - shown before "Load image". */
+  image_size_kb?: number | null
 }
 
 export type CommunityStat = {

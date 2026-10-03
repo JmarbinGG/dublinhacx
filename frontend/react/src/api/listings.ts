@@ -29,7 +29,8 @@ export type ListingQuery = {
   offset?: number
 }
 
-export const PAGE_SIZE = 24
+/** About a dozen at a time - small pages, "Show more" for the rest. */
+export const PAGE_SIZE = 12
 
 function cacheKey(query: ListingQuery) {
   const sorted = Object.entries(query)

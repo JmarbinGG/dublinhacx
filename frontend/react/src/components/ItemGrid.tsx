@@ -20,7 +20,7 @@ export default function ItemGrid({ listings, loading, error, emptyMessage, onRet
   const [stagger] = useState(() => (listings ? false : takeStagger()))
 
   if (error) return <ErrorState message={error} onRetry={onRetry} />
-  if (!listings) return loading ? <SkeletonGrid /> : null
+  if (!listings) return loading ? <SkeletonGrid count={3} /> : null
   if (listings.length === 0) return loading ? <SkeletonGrid /> : <Empty message={emptyMessage} />
 
   return (

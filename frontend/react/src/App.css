@@ -276,17 +276,6 @@
   font-size: 1.05rem;
 }
 
-.search__ai {
-  border: 1px solid var(--line);
-  background: var(--sunken);
-  color: var(--text);
-  font-size: 0.8rem;
-  font-weight: 600;
-  padding: 4px 10px;
-  border-radius: var(--radius);
-  white-space: nowrap;
-}
-
 /* ---------- avatar menu ---------- */
 
 .menu {
@@ -438,6 +427,104 @@
   border-radius: var(--radius);
   padding: 0 6px;
   vertical-align: 2px;
+}
+
+/* ---------- search: interpreted terms + refine ---------- */
+
+.interpreted,
+.refine__row,
+.refine__trail {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.refine {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.refine__trail {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-weight: 600;
+}
+
+/* "screws › 5 › small" */
+.refine__trail li + li::before {
+  content: '›';
+  margin-right: 6px;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.refine__trail li:last-child::before {
+  content: none;
+}
+
+.chip--removable {
+  gap: 4px;
+  padding-right: 4px;
+}
+
+.chip--removable button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: none;
+  border-radius: var(--radius);
+  color: var(--muted);
+  padding: 0;
+}
+
+.chip--removable button:hover {
+  background: var(--sunken);
+  color: var(--text);
+}
+
+.refine__form {
+  display: flex;
+  gap: 6px;
+  flex: 1 1 220px;
+  max-width: 320px;
+}
+
+.refine__form input {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.refine__form .secondary-button {
+  min-height: 36px;
+  padding: 4px 12px;
+}
+
+.status-slot {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+
+.status-slot > * {
+  flex: 1;
+}
+
+.searching {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
 }
 
 /* ---------- cards ---------- */
@@ -850,70 +937,6 @@ textarea {
 .avatar--hue3 { background: #7a3b2e; }
 .avatar--hue4 { background: #555c57; }
 .avatar--hue5 { background: #4d5f1f; }
-
-/* ---------- AI overview ---------- */
-
-.ai-card {
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius);
-  padding: 14px 16px;
-  background: var(--surface);
-}
-
-.ai-card__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-}
-
-.ai-card__header h2 {
-  margin: 0;
-  font-size: 1.05rem;
-}
-
-.ai-card__tools {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.ai-card__label {
-  margin: 2px 0 10px;
-  font-size: 0.8rem;
-  color: var(--muted);
-}
-
-.ai-card__body {
-  animation: rise 180ms var(--ease-out);
-}
-
-.ai-card__summary {
-  font-size: 1rem;
-}
-
-.ai-card__loading {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: var(--muted);
-}
-
-.ai-card__error {
-  color: var(--warn);
-  font-size: 0.9rem;
-}
-
-.ai-card__picks {
-  margin: 10px 0;
-}
-
-.ai-card__caveats {
-  margin: 0 0 10px;
-  padding-left: 1.1rem;
-  font-size: 0.875rem;
-  color: var(--muted);
-}
 
 /* ---------- assistant ---------- */
 

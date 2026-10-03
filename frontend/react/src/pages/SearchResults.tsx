@@ -1,101 +1,182 @@
-import { Suspense, lazy, useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { PAGE_SIZE } from '../api/listings'
+import { useAuth } from '../auth/AuthContext'
 import Avatar from '../components/Avatar'
 import FilterBar from '../components/FilterBar'
+import Icon from '../components/Icon'
 import ItemGrid from '../components/ItemGrid'
-import { PAGE_SIZE } from '../api/listings'
+import { SkeletonGrid } from '../components/States'
 import { useCommunities } from '../context/CommunityContext'
 import { useDataBudget } from '../context/DataBudgetContext'
-import { useListings, useSearch } from '../hooks/useItems'
+import { useListings } from '../hooks/useItems'
+import { useSmartSearch } from '../hooks/useSmartSearch'
 import { filterExchange, readFilters, toListingQuery } from '../lib/filters'
+import { timeAgo } from '../lib/geo'
+import { REFINE_LIMIT, cleanText, redactPersonal } from '../lib/text'
 
-// Only fetched when someone presses "Ask AI".
-const AiOverview = lazy(() => import('../components/AiOverview'))
-
-const MAX_PAGES = 8 // the API caps a page at 200
+const MAX_PAGES = 8
+const MAX_REFINEMENTS = 5
 
 /**
- * /search - the browsable feed. With a query (and plain search off), it
- * uses /api/search, which may be AI-ranked and also finds people; otherwise
- * /api/listings with every filter. "Ask AI" adds an overview on top - it
- * never replaces or reorders these results.
+ * /search. With a query, the one search bar's request goes to the server,
+ * which decides simple vs complex (AI). Without one - or with "plain search"
+ * on - it's the filterable browse feed from /api/listings.
+ *
+ * URL: q, r (refinements, repeated), x (interpreted terms removed, repeated),
+ * plus the filter params. So the back button and repeat searches reuse the
+ * cached answer.
  */
 export default function SearchResults() {
   const [params, setParams] = useSearchParams()
   const filters = readFilters(params)
+  const { token } = useAuth()
   const { home, homePoint } = useCommunities()
   const { aiAnswers } = useDataBudget()
-  const page = Math.min(MAX_PAGES, Math.max(1, Number(params.get('page')) || 1))
   const plain = params.get('plain') === '1'
-  const askAi = params.get('ai') === '1' && !!filters.q && aiAnswers
+  const refinements = params.getAll('r')
+  const excluded = params.getAll('x')
 
-  // Smart search only supports these filters; anything else uses /api/listings.
-  const useSmart = !!filters.q && !plain && !filters.kind && filters.scope === 'all' && filters.sort === 'newest'
-  const searchRes = useSearch(useSmart ? { q: filters.q, type: filters.type || undefined, limit: PAGE_SIZE * page } : null)
-  const listRes = useListings(useSmart ? null : toListingQuery(filters, home, homePoint, PAGE_SIZE * page))
-  const active = useSmart ? searchRes : listRes
+  const smart = useSmartSearch(
+    filters.q && !plain
+      ? {
+          // Contact details never leave the device, even inside a query.
+          q: redactPersonal(filters.q).text,
+          refinements: refinements.map((r) => redactPersonal(r).text),
+          exclude: excluded,
+          community: home,
+          allow_ai: aiAnswers,
+          filters: {
+            type: filters.type || undefined,
+            kind: filters.kind || undefined,
+            exchange: filters.exchange || undefined,
+            scope: filters.scope === 'all' ? undefined : filters.scope,
+          },
+        }
+      : null,
+    token,
+  )
 
-  const rawListings = useSmart ? (searchRes.data?.listings ?? null) : listRes.data
-  const listings = rawListings ? filterExchange(rawListings, filters.exchange) : null
-  const people = useSmart ? (searchRes.data?.users ?? []) : []
-  const engine = useSmart ? searchRes.data?.engine : 'keyword'
-  const canLoadMore = !!rawListings && rawListings.length >= PAGE_SIZE * page && page < MAX_PAGES
+  // Browse feed (no query, or plain search chosen).
+  const page = Math.min(MAX_PAGES, Math.max(1, Number(params.get('page')) || 1))
+  const browseQuery = toListingQuery(plain ? filters : { ...filters, q: '' }, home, homePoint, PAGE_SIZE * page)
+  const browse = useListings(filters.q && !plain ? null : browseQuery)
+  const browseListings = browse.data ? filterExchange(browse.data, filters.exchange) : null
 
-  function setParam(key: string, value: string | null) {
+  function update(mutate: (next: URLSearchParams) => void, replace = false) {
     const next = new URLSearchParams(params)
-    if (value) next.set(key, value)
-    else next.delete(key)
-    setParams(next, { replace: key === 'page' })
+    mutate(next)
+    next.delete('page')
+    setParams(next, { replace })
   }
 
-  // Move focus to the results heading after a new search, for screen readers.
+  const addRefinement = (term: string) => {
+    const clean = cleanText(term, REFINE_LIMIT)
+    if (!clean || refinements.includes(clean) || refinements.length >= MAX_REFINEMENTS) return
+    update((next) => next.append('r', clean))
+  }
+  const removeRefinement = (term: string) =>
+    update((next) => {
+      next.delete('r')
+      refinements.filter((r) => r !== term).forEach((r) => next.append('r', r))
+    })
+  const removeInterpreted = (term: string) => update((next) => next.append('x', term))
+
+  // Focus the results heading after a new search, for screen readers.
   const headingRef = useRef<HTMLHeadingElement>(null)
   useEffect(() => {
     if (filters.q) headingRef.current?.focus()
   }, [filters.q])
 
+  const usingSmart = !!filters.q && !plain
+  const meta = smart.meta
+  const listings = usingSmart ? smart.listings : browseListings
+
   return (
     <section className="stack">
       <FilterBar />
 
-      {askAi && (
-        <Suspense fallback={<p className="hint">Loading AI overview...</p>}>
-          <AiOverview
-            q={filters.q}
-            filters={{
-              type: filters.type || undefined,
-              kind: filters.kind || undefined,
-              exchange: filters.exchange || undefined,
-              scope: filters.scope,
-            }}
-            known={listings ?? []}
-            onClose={() => setParam('ai', null)}
-          />
-        </Suspense>
-      )}
-
       <div className="section-head">
         <h1 className="results-title" ref={headingRef} tabIndex={-1} aria-live="polite">
           {filters.q ? <>Results for "{filters.q}"</> : 'Everything shared'}
-          {listings && <span className="count">{listings.length}</span>}
+          {listings && <span className="count">{listings.length}{(usingSmart ? meta?.has_more : false) && '+'}</span>}
         </h1>
-        {filters.q && engine && (
-          <span className="hint" title="How these results were found">
-            {engine === 'ai' ? 'Ranked by AI' : 'Keyword match'}
-          </span>
+        {usingSmart && meta?.ai && (
+          <span className="hint">AI-assisted, may be wrong{meta.source === 'demo' && ' · demo, AI not connected yet'}</span>
         )}
       </div>
 
-      {active.cachedAt && (
+      {usingSmart && (
+        <>
+          {meta?.route === 'complex' && meta.interpreted.length > 0 && (
+            <div className="interpreted" aria-label="What we searched for">
+              <span className="hint">Searched for:</span>
+              {meta.interpreted.map((term) => (
+                <span key={term} className="chip chip--removable">
+                  {term}
+                  <button type="button" aria-label={`Don't search for ${term}`} onClick={() => removeInterpreted(term)}>
+                    <Icon name="x" />
+                  </button>
+                </span>
+              ))}
+              {excluded.length > 0 && (
+                <button type="button" className="link-button" onClick={() => update((next) => next.delete('x'))}>
+                  Undo
+                </button>
+              )}
+            </div>
+          )}
+
+          <RefineBar
+            query={filters.q}
+            refinements={refinements}
+            suggestions={(meta?.suggestions ?? []).filter((s) => !refinements.includes(s.code))}
+            onAdd={addRefinement}
+            onRemove={removeRefinement}
+            onClear={() => update((next) => next.delete('r'))}
+            full={refinements.length >= MAX_REFINEMENTS}
+          />
+
+          {/* One fixed-height slot for every status line, so swapping
+              "Searching..." for a note never pushes the results down. */}
+          <div className="status-slot" aria-live="polite">
+            {smart.loading ? (
+              <div className="searching" role="status">
+                Searching...
+                <button type="button" className="secondary-button" onClick={smart.cancel}>
+                  Cancel
+                </button>
+              </div>
+            ) : smart.cancelled ? (
+              <p className="notice">
+                Search cancelled.{' '}
+                <button type="button" className="link-button" onClick={smart.retry}>
+                  Try again
+                </button>{' '}
+                or{' '}
+                <button type="button" className="link-button" onClick={() => update((next) => next.set('plain', '1'))}>
+                  use plain keyword search
+                </button>
+                .
+              </p>
+            ) : meta?.note ? (
+              <p className="notice notice--warn">{meta.note}</p>
+            ) : meta?.cachedAt ? (
+              <p className="hint">Saved {timeAgo(new Date(meta.cachedAt).toISOString())} - you're offline.</p>
+            ) : null}
+          </div>
+        </>
+      )}
+
+      {!usingSmart && browse.cachedAt && (
         <p className="notice notice--warn">
-          Saved copy from {new Date(active.cachedAt).toLocaleString()}. You're offline or the server can't be
-          reached.
+          Saved copy from {timeAgo(new Date(browse.cachedAt).toISOString())}. You're offline or the server can't be reached.
         </p>
       )}
 
-      {people.length > 0 && (
+      {usingSmart && meta && meta.users.length > 0 && (
         <ul className="people" aria-label="People">
-          {people.slice(0, 6).map((person) => (
+          {meta.users.slice(0, 6).map((person) => (
             <li key={person.id}>
               <Link to={`/users/${person.id}`} className="person">
                 <Avatar name={person.name} size="sm" />
@@ -110,28 +191,117 @@ export default function SearchResults() {
       )}
 
       <h2 className="visually-hidden">Listings</h2>
-      <ItemGrid
-        listings={listings}
-        loading={active.loading}
-        error={active.error}
-        emptyMessage={
-          filters.q
-            ? `Nothing matched "${filters.q}" with these filters. Try fewer words, or post a "Wanted" listing.`
-            : 'Nothing matches these filters yet.'
-        }
-        onRetry={active.reload}
-      />
-
-      {canLoadMore && (
-        <button
-          type="button"
-          className="secondary-button load-more"
-          disabled={active.loading}
-          onClick={() => setParam('page', String(page + 1))}
-        >
-          {active.loading ? 'Loading...' : 'Show more'}
-        </button>
+      {usingSmart && smart.loading && !smart.listings ? (
+        <SkeletonGrid count={2} />
+      ) : (
+        <ItemGrid
+          listings={listings}
+          loading={usingSmart ? smart.loading : browse.loading}
+          error={usingSmart ? smart.error : browse.error}
+          emptyMessage={
+            filters.q
+              ? refinements.length
+                ? 'Nothing matches all of those. Remove a refinement to widen the search.'
+                : `Nothing matched "${filters.q}". Try fewer words, or post a "Wanted" listing.`
+              : 'Nothing matches these filters yet.'
+          }
+          onRetry={usingSmart ? smart.retry : browse.reload}
+        />
       )}
+
+      {usingSmart
+        ? meta?.has_more && (
+            <button type="button" className="secondary-button load-more" disabled={smart.loadingMore} onClick={smart.loadMore}>
+              {smart.loadingMore ? 'Loading...' : 'Show more'}
+            </button>
+          )
+        : browse.data &&
+          browse.data.length >= PAGE_SIZE * page &&
+          page < MAX_PAGES && (
+            <button
+              type="button"
+              className="secondary-button load-more"
+              disabled={browse.loading}
+              onClick={() => update((next) => next.set('page', String(page + 1)), true)}
+            >
+              {browse.loading ? 'Loading...' : 'Show more'}
+            </button>
+          )}
     </section>
+  )
+}
+
+type RefineProps = {
+  query: string
+  refinements: string[]
+  suggestions: { code: string; label: string }[]
+  onAdd: (term: string) => void
+  onRemove: (term: string) => void
+  onClear: () => void
+  full: boolean
+}
+
+/**
+ * "screws › 5 › small": tap a suggestion or add a word at a time. Terms go
+ * to the server raw - the client never guesses whether "5" is a quantity
+ * or a size.
+ */
+function RefineBar({ query, refinements, suggestions, onAdd, onRemove, onClear, full }: RefineProps) {
+  const [draft, setDraft] = useState('')
+
+  return (
+    <div className="refine">
+      {refinements.length > 0 && (
+        <ol className="refine__trail" aria-label="Search and refinements">
+          <li>{query}</li>
+          {refinements.map((term) => (
+            <li key={term}>
+              <span className="chip chip--removable">
+                {term}
+                <button type="button" aria-label={`Remove ${term}`} onClick={() => onRemove(term)}>
+                  <Icon name="x" />
+                </button>
+              </span>
+            </li>
+          ))}
+          <li>
+            <button type="button" className="link-button" onClick={onClear}>
+              Clear refinements
+            </button>
+          </li>
+        </ol>
+      )}
+
+      <div className="refine__row">
+        {suggestions.map((s) => (
+          <button key={s.code} type="button" className="chip" disabled={full} onClick={() => onAdd(s.code)}>
+            + {s.label}
+          </button>
+        ))}
+        <form
+          className="refine__form"
+          onSubmit={(e) => {
+            e.preventDefault()
+            onAdd(draft)
+            setDraft('')
+          }}
+        >
+          <label className="visually-hidden" htmlFor="refine-input">
+            Narrow down
+          </label>
+          <input
+            id="refine-input"
+            value={draft}
+            maxLength={REFINE_LIMIT}
+            disabled={full}
+            placeholder={full ? 'Enough refinements' : 'Narrow down, e.g. 5'}
+            onChange={(e) => setDraft(e.target.value)}
+          />
+          <button type="submit" className="secondary-button" disabled={full || !draft.trim()}>
+            Add
+          </button>
+        </form>
+      </div>
+    </div>
   )
 }

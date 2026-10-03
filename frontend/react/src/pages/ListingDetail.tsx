@@ -97,7 +97,7 @@ export default function ListingDetail() {
 
       {listing.image && (
         <div className="detail-image">
-          <DataBudgetImage src={listing.image} alt={listing.title} />
+          <DataBudgetImage src={listing.image} alt={listing.title} knownSizeKb={listing.image_size_kb} />
         </div>
       )}
 

@@ -5,6 +5,9 @@ import Icon from '../Icon'
 // The panel, its conversation state and the AI client load on first tap.
 const Assistant = lazy(() => import('./AssistantWidget'))
 
+// Off until the backend confirms the assistant stays (set VITE_ENABLE_ASSISTANT=1).
+const ENABLED = import.meta.env.VITE_ENABLE_ASSISTANT === '1'
+
 /** The only floating element: a small "Ask Banyan" button. */
 export default function AssistantLauncher() {
   const { aiAnswers } = useDataBudget()
@@ -18,7 +21,7 @@ export default function AssistantLauncher() {
     setTimeout(() => buttonRef.current?.focus(), 0)
   }, [])
 
-  if (!aiAnswers) return null
+  if (!ENABLED || !aiAnswers) return null
 
   if (open) {
     return (

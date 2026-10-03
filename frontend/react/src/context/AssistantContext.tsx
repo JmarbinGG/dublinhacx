@@ -5,6 +5,7 @@ import {
   redactPersonal,
   reportAssistant,
   sendAssistantMessage,
+  SessionExpiredError,
   startAssistantSession,
   type AssistantChip,
 } from '../api/ai'
@@ -123,7 +124,17 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
           setStored((prev) => ({ ...prev, sessionId }))
         }
         // Community name only - never coordinates, email or phone.
-        const reply = await sendAssistantMessage(sessionId, text, home, token, controller.signal)
+        let reply
+        try {
+          reply = await sendAssistantMessage(sessionId, text, home, token, controller.signal)
+        } catch (error) {
+          if (!(error instanceof SessionExpiredError)) throw error
+          // The server expired the session: start a fresh one and resend once.
+          sessionId = await startAssistantSession(token)
+          setStored((prev) => ({ ...prev, sessionId }))
+          add({ role: 'notice', text: 'Started a new chat session.' })
+          reply = await sendAssistantMessage(sessionId, text, home, token, controller.signal)
+        }
         add({ role: 'assistant', text: reply.text, chips: reply.chips, listingIds: reply.listing_ids, demo: reply.demo })
         if (!reply.demo) recordAi(AI_ANSWER_KB)
         setFailedTurns((n) => (reply.listing_ids.length === 0 && reply.chips.length === 0 ? n + 1 : 0))

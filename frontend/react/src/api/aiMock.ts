@@ -2,10 +2,9 @@ import type { Listing, SearchResponse } from '../types'
 import { request } from './client'
 
 /**
- * Dev-only stand-in for the AI endpoints, used when the backend answers 404
- * (route not built yet). It runs the real keyword search and writes a canned
- * overview around it - no model involved. Responses carry `demo: true` so
- * the UI labels them.
+ * Dev-only stand-in for the assistant, used when the backend answers 404
+ * (route not built yet). It runs the real keyword search - no model
+ * involved. Responses carry `demo: true` so the UI labels them.
  */
 
 async function keyword(q: string, type: string | undefined, signal?: AbortSignal): Promise<Listing[]> {
@@ -15,44 +14,6 @@ async function keyword(q: string, type: string | undefined, signal?: AbortSignal
   const longest = q.split(' ').sort((a, b) => b.length - a.length)[0]
   return (await request<SearchResponse>('/api/search', { params: { q: longest, type, limit: 12 }, signal }))
     .listings
-}
-
-export async function mockOverview(
-  q: string,
-  filters: { type?: string },
-  community: string | null,
-  signal?: AbortSignal,
-) {
-  const listings = await keyword(q, filters.type, signal)
-  const offers = listings.filter((l) => l.kind === 'offer')
-  const ranked = [
-    ...offers.filter((l) => l.owner.community === community),
-    ...offers.filter((l) => l.owner.community !== community),
-    ...listings.filter((l) => l.kind === 'request'),
-  ].slice(0, 3)
-
-  if (ranked.length === 0) {
-    return {
-      summary: `Nothing matches "${q}" yet. Try a broader word, or post a "Wanted" listing so people nearby can find you.`,
-      picks: [],
-      caveats: ['Demo answer - the AI service is not connected yet.'],
-      engine: 'demo',
-      demo: true,
-    }
-  }
-
-  return {
-    summary: `Found ${listings.length} listing${listings.length === 1 ? '' : 's'} for "${q}". ${
-      ranked[0].owner.community === community ? 'The best match is in your own town.' : 'The closest matches are in other towns.'
-    } Free and lend offers are listed first where they fit.`,
-    picks: ranked.map((l) => ({
-      id: l.id,
-      why: `${l.kind === 'request' ? 'Someone is looking for this' : l.exchange === 'free' ? 'Offered free' : l.exchange === 'lend' ? 'Available to borrow' : 'Matches your search'}${l.owner.community ? ` in ${l.owner.community}` : ''}.`,
-    })),
-    caveats: ['Demo answer - the AI service is not connected yet.', 'Check condition and timing with the owner before travelling.'],
-    engine: 'demo',
-    demo: true,
-  }
 }
 
 const TYPE_CHIPS = [

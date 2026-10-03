@@ -78,3 +78,26 @@ export async function withOfflineCache<T>(
     throw error
   }
 }
+
+/** Every listing saved in any cached response, de-duplicated - the offline
+ * search pool. Text only; nothing here triggers a download. */
+export function cachedListings<T extends { id: number; title: string }>(): { rows: T[]; savedAt: number | null } {
+  const byId = new Map<number, T>()
+  let savedAt: number | null = null
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i)
+    if (!key?.startsWith(PREFIX)) continue
+    try {
+      const entry = JSON.parse(localStorage.getItem(key) ?? '') as Entry<unknown>
+      const data = entry.data as { listings?: unknown } | unknown[]
+      const rows = Array.isArray(data) ? data : Array.isArray((data as { listings?: unknown })?.listings) ? ((data as { listings: unknown[] }).listings) : []
+      for (const row of rows as T[]) {
+        if (row && typeof row.id === 'number' && typeof row.title === 'string') byId.set(row.id, row)
+      }
+      if (rows.length) savedAt = Math.max(savedAt ?? 0, entry.savedAt)
+    } catch {
+      // Skip unreadable entries.
+    }
+  }
+  return { rows: [...byId.values()], savedAt }
+}
