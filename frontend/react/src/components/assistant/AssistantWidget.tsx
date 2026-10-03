@@ -1,0 +1,201 @@
+import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { AI_TEXT_LIMIT } from '../../api/ai'
+import { isAbort } from '../../api/client'
+import { getListing } from '../../api/listings'
+import { useCommunities } from '../../context/CommunityContext'
+import { useAssistant, type ChatMessage } from '../../context/AssistantContext'
+import { useDataBudget } from '../../context/DataBudgetContext'
+import { useOnline } from '../../hooks/useOnline'
+import { kindLabel, typeLabel, type Listing } from '../../types'
+
+/** Listings the assistant pointed to, fetched by id from our own API. Ids
+ * that don't exist are silently dropped, so the model can't invent any. */
+function SuggestedListings({ ids }: { ids: number[] }) {
+  const [listings, setListings] = useState<Listing[] | null>(null)
+  const { describeDistance } = useCommunities()
+
+  useEffect(() => {
+    const controller = new AbortController()
+    Promise.all(
+      ids.map((id) =>
+        getListing(String(id), controller.signal)
+          .then((res) => res.data)
+          .catch((error) => {
+            if (isAbort(error)) throw error
+            return null
+          }),
+      ),
+    )
+      .then((rows) => setListings(rows.filter((row): row is Listing => row !== null)))
+      .catch(() => {})
+    return () => controller.abort()
+  }, [ids])
+
+  if (!listings) return <p className="chat__hint">Loading listings...</p>
+  if (listings.length === 0) return null
+  return (
+    <ul className="chat__listings">
+      {listings.map((listing) => (
+        <li key={listing.id}>
+          <Link to={`/listings/${encodeURIComponent(listing.id)}`}>{listing.title}</Link>
+          <span>
+            {typeLabel(listing.type)} · {kindLabel(listing)} · {describeDistance(listing).text}
+          </span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function Message({ message, onChip, disabled }: { message: ChatMessage; onChip: (label: string) => void; disabled: boolean }) {
+  if (message.role === 'notice') return <li className="chat__notice">{message.text}</li>
+  return (
+    <li className={`chat__msg chat__msg--${message.role}`}>
+      {/* Plain text only - model output is never rendered as HTML. */}
+      <p>{message.text}</p>
+      {message.role === 'assistant' && (
+        <>
+          {message.listingIds && message.listingIds.length > 0 && <SuggestedListings ids={message.listingIds} />}
+          {message.chips && message.chips.length > 0 && (
+            <div className="chat__chips">
+              {message.chips.map((chip) => (
+                <button key={chip.code} type="button" className="chip" disabled={disabled} onClick={() => onChip(chip.label)}>
+                  {chip.label}
+                </button>
+              ))}
+            </div>
+          )}
+          <span className="chat__label">AI-generated, may be wrong{message.demo ? ' · demo' : ''}</span>
+        </>
+      )}
+    </li>
+  )
+}
+
+/**
+ * Floating "Ask Banyan" assistant. It asks clarifying questions, then points
+ * to real listings. Offline, the history is read-only and a typed message
+ * waits for an explicit "Send now".
+ */
+export default function AssistantWidget() {
+  const assistant = useAssistant()
+  const { aiAnswers } = useDataBudget()
+  const online = useOnline()
+  const [draft, setDraft] = useState('')
+  const listRef = useRef<HTMLUListElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    listRef.current?.scrollTo({ top: listRef.current.scrollHeight })
+  }, [assistant.messages.length, assistant.pending, assistant.open])
+
+  useEffect(() => {
+    if (assistant.open) inputRef.current?.focus()
+  }, [assistant.open])
+
+  if (!aiAnswers) return null
+
+  if (!assistant.open) {
+    return (
+      <button type="button" className="chat-launcher" onClick={() => assistant.setOpen(true)}>
+        Ask Banyan
+      </button>
+    )
+  }
+
+  const busy = assistant.pending || assistant.coolingDown
+  const submit = (text: string) => {
+    if (!text.trim()) return
+    assistant.send(text)
+    setDraft('')
+  }
+
+  return (
+    <section className="chat" role="dialog" aria-label="Banyan assistant">
+      <header className="chat__header">
+        <strong>Ask Banyan</strong>
+        <span className="chat__sub">Tell me what you need - I'll find who has it.</span>
+        <div className="chat__actions">
+          <button type="button" className="link-button" onClick={assistant.reset}>
+            New chat
+          </button>
+          <button type="button" className="link-button" onClick={() => assistant.setOpen(false)} aria-label="Close assistant">
+            Close
+          </button>
+        </div>
+      </header>
+
+      <ul className="chat__messages" ref={listRef} aria-live="polite">
+        {assistant.messages.length === 0 && (
+          <li className="chat__notice">
+            Try "I need a pump set for two days" or "someone to fix a sewing machine".
+          </li>
+        )}
+        {assistant.messages.map((message) => (
+          <Message key={message.id} message={message} onChip={submit} disabled={busy || !online} />
+        ))}
+        {assistant.pending && (
+          <li className="chat__notice">
+            Thinking...{' '}
+            <button type="button" className="link-button" onClick={assistant.cancel}>
+              Stop
+            </button>
+          </li>
+        )}
+      </ul>
+
+      {assistant.failedTurns >= 2 && (
+        <div className="chat__handoff">
+          Not finding it?{' '}
+          <Link to="/search" onClick={() => assistant.setOpen(false)}>
+            Browse listings
+          </Link>{' '}
+          or{' '}
+          <button type="button" className="link-button" onClick={() => assistant.report('Assistant could not help')}>
+            report a problem
+          </button>
+          .
+        </div>
+      )}
+
+      {assistant.unsent && (
+        <div className="chat__unsent" role="status">
+          Not sent yet: "{assistant.unsent}"
+          <div>
+            <button type="button" className="secondary-button" disabled={!online} onClick={assistant.sendUnsent}>
+              {online ? 'Send now' : 'Waiting for connection'}
+            </button>
+            <button type="button" className="link-button" onClick={assistant.discardUnsent}>
+              Discard
+            </button>
+          </div>
+        </div>
+      )}
+
+      <form
+        className="chat__form"
+        onSubmit={(event) => {
+          event.preventDefault()
+          submit(draft)
+        }}
+      >
+        <input
+          ref={inputRef}
+          value={draft}
+          maxLength={AI_TEXT_LIMIT}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder={online ? 'What are you looking for?' : 'Offline - type now, send later'}
+          aria-label="Message the assistant"
+          disabled={assistant.pending}
+        />
+        <button type="submit" className="primary-button" disabled={busy || !draft.trim()}>
+          Send
+        </button>
+      </form>
+      <p className="chat__footnote">
+        {draft.length}/{AI_TEXT_LIMIT} · Never share phone numbers or addresses here.
+      </p>
+    </section>
+  )
+}

@@ -1,56 +1,58 @@
 import { Link } from 'react-router-dom'
 import { useCommunities } from '../context/CommunityContext'
 import { timeAgo } from '../lib/geo'
-import { categoryLabel, type Item } from '../types'
+import { exchangeLabel, kindLabel, typeLabel, type Listing } from '../types'
+import Avatar from './Avatar'
 import DataBudgetImage from './DataBudgetImage'
 
 type Props = {
-  item: Item
-  /** Replaces the default "Connect / Offer" footer action (e.g. Delete on My Listings). */
+  listing: Listing
+  /** Replaces the default "Connect" footer action (e.g. Edit on your own listings). */
   actions?: React.ReactNode
+  /** A short "why this matches" line, e.g. from the AI overview. */
+  note?: string
 }
 
 /**
- * Text-first listing card: category + distance badges, title, short
- * description, price/trade terms, an opt-in photo, and a Connect action.
+ * Text-first listing card: type, offer/wanted and distance badges, title,
+ * short description, exchange terms, an opt-in photo, and who posted it.
  * Everything except the photo arrives in the initial JSON.
  */
-export default function RuralMarketCard({ item, actions }: Props) {
+export default function RuralMarketCard({ listing, actions, note }: Props) {
   const { describeDistance } = useCommunities()
-  const distance = describeDistance(item.community_id)
+  const distance = describeDistance(listing)
+  const terms = [exchangeLabel(listing.exchange), listing.price, listing.quantity].filter(Boolean).join(' · ')
 
   return (
-    <article className="market-card">
+    <article className={`market-card${listing.kind === 'request' ? ' market-card--request' : ''}`}>
       <div className="market-card__badges">
-        <span className={`badge badge--${item.category}`}>{categoryLabel(item.category)}</span>
+        <span className={`badge badge--${listing.type}`}>{typeLabel(listing.type)}</span>
+        <span className={`badge badge--kind-${listing.kind}`}>{kindLabel(listing)}</span>
         <span className={`distance-badge distance-badge--${distance.tone}`}>{distance.text}</span>
+        {listing.status !== 'available' && <span className="badge badge--status">{listing.status}</span>}
       </div>
 
       <h3 className="market-card__title">
-        <Link to={`/listings/${item.id}`}>{item.title}</Link>
+        <Link to={`/listings/${encodeURIComponent(listing.id)}`}>{listing.title}</Link>
       </h3>
 
-      {item.description && <p className="market-card__desc">{item.description}</p>}
+      {note && <p className="market-card__note">{note}</p>}
+      {listing.description && <p className="market-card__desc">{listing.description}</p>}
+      {terms && <p className="market-card__price">{terms}</p>}
 
-      {(item.price_or_exchange || item.quantity) && (
-        <p className="market-card__price">
-          {item.price_or_exchange}
-          {item.price_or_exchange && item.quantity && ' · '}
-          {item.quantity && <span className="market-card__qty">{item.quantity}</span>}
-        </p>
-      )}
-
-      {item.image_url && (
-        <DataBudgetImage src={item.image_url} sizeKb={item.image_size_kb} alt={item.title} />
-      )}
+      {listing.image && <DataBudgetImage src={listing.image} alt={listing.title} />}
 
       <footer className="market-card__footer">
-        <span className="market-card__meta">
-          {[item.owner, timeAgo(item.created_at)].filter(Boolean).join(' · ')}
-        </span>
+        <Link to={`/users/${listing.owner.id}`} className="market-card__owner">
+          <Avatar name={listing.owner.name} size="sm" />
+          <span>
+            {listing.owner.name}
+            <span className="market-card__meta"> · {timeAgo(listing.created_at)}</span>
+          </span>
+        </Link>
         {actions ?? (
-          <Link to={`/listings/${item.id}#connect`} className="primary-button market-card__cta">
-            Connect / Offer
+          <Link to={`/listings/${encodeURIComponent(listing.id)}#connect`} className="primary-button market-card__cta">
+            {listing.kind === 'request' ? 'I can help' : 'Connect'}
           </Link>
         )}
       </footer>

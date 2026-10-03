@@ -2,15 +2,17 @@ import { isNetworkError } from './client'
 
 /**
  * Keeps the last good response for a request in localStorage, so on a
- * dropped satellite link the app still shows what it saw last time instead
- * of an error. Only text is cached - images are never stored here.
+ * dropped connection the app still shows what it saw last time instead of an
+ * error. Only text is cached - never images. Old entries are evicted so
+ * storage can't fill up silently.
  */
 
-const PREFIX = 'byproduct.cache.'
+const PREFIX = 'banyan.cache.'
+const MAX_ENTRIES = 40
 
 type Entry<T> = { data: T; savedAt: number }
 
-/** `cachedAt` is null for a fresh response, or when the cached copy was saved. */
+/** `cachedAt` is null for a fresh response, else when the saved copy was made. */
 export type Cached<T> = { data: T; cachedAt: number | null }
 
 export function readCache<T>(key: string): Entry<T> | null {
@@ -22,17 +24,42 @@ export function readCache<T>(key: string): Entry<T> | null {
   }
 }
 
-function writeCache<T>(key: string, data: T) {
+function evict() {
+  const entries: { key: string; savedAt: number }[] = []
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i)
+    if (!key?.startsWith(PREFIX)) continue
+    try {
+      entries.push({ key, savedAt: (JSON.parse(localStorage.getItem(key) ?? '{}') as Entry<unknown>).savedAt ?? 0 })
+    } catch {
+      entries.push({ key, savedAt: 0 })
+    }
+  }
+  entries
+    .sort((a, b) => b.savedAt - a.savedAt)
+    .slice(MAX_ENTRIES)
+    .forEach(({ key }) => localStorage.removeItem(key))
+}
+
+export function writeCache<T>(key: string, data: T) {
+  const value = JSON.stringify({ data, savedAt: Date.now() })
   try {
-    localStorage.setItem(PREFIX + key, JSON.stringify({ data, savedAt: Date.now() }))
+    localStorage.setItem(PREFIX + key, value)
+    evict()
   } catch {
-    // Storage full or blocked - the app just won't work offline.
+    // Storage full - drop old entries and try once more, else give up.
+    try {
+      evict()
+      localStorage.setItem(PREFIX + key, value)
+    } catch {
+      // The app just won't have this response offline.
+    }
   }
 }
 
 /**
  * Run `fetcher`; on success cache the result under `key`. On a network
- * failure (not an HTTP error), return `fallback()` if it finds anything.
+ * failure (never an HTTP error), return `fallback()` if it finds anything.
  */
 export async function withOfflineCache<T>(
   key: string,

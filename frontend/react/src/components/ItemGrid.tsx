@@ -1,25 +1,27 @@
 import RuralMarketCard from './RuralMarketCard'
 import { Empty, ErrorState, Loading } from './States'
-import type { Item } from '../types'
+import type { Listing } from '../types'
 
 type Props = {
-  items: Item[] | null
+  listings: Listing[] | null
   loading: boolean
   error: string | null
   emptyMessage: string
   onRetry?: () => void
+  /** Optional per-listing note (AI "why"), keyed by id. */
+  notes?: Map<number, string>
 }
 
 /** The grid of listing cards, or the matching loading / error / empty state. */
-export default function ItemGrid({ items, loading, error, emptyMessage, onRetry }: Props) {
-  if (loading) return <Loading label="Loading listings..." />
+export default function ItemGrid({ listings, loading, error, emptyMessage, onRetry, notes }: Props) {
   if (error) return <ErrorState message={error} onRetry={onRetry} />
-  if (!items || items.length === 0) return <Empty message={emptyMessage} />
+  if (!listings) return loading ? <Loading label="Loading listings..." /> : null
+  if (listings.length === 0) return loading ? <Loading label="Loading listings..." /> : <Empty message={emptyMessage} />
 
   return (
-    <div className="grid">
-      {items.map((item) => (
-        <RuralMarketCard key={item.id} item={item} />
+    <div className={`grid${loading ? ' grid--refreshing' : ''}`} aria-busy={loading}>
+      {listings.map((listing) => (
+        <RuralMarketCard key={listing.id} listing={listing} note={notes?.get(listing.id)} />
       ))}
     </div>
   )

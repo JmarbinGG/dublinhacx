@@ -1,30 +1,31 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import { listCommunities } from '../api/items'
+import { listCommunities, listUsers } from '../api/users'
 import { useAuth } from '../auth/AuthContext'
-import { distanceMiles } from '../lib/geo'
-import type { Community } from '../types'
+import { distanceKm, type Point } from '../lib/geo'
+import type { CommunityStat, Listing } from '../types'
 
-const HOME_KEY = 'byproduct.homeCommunity'
-
-/** Up to this many miles counts as "nearby" - the walk-or-short-drive radius. */
-export const NEARBY_MILES = 5
+const HOME_KEY = 'banyan.homeCommunity'
 
 export type DistanceTone = 'home' | 'near' | 'far' | 'unknown'
 
+/** Up to this many km counts as "nearby". */
+export const NEARBY_KM = 50
+
 type CommunityContextValue = {
-  communities: Community[]
+  communities: CommunityStat[]
   loading: boolean
-  error: string | null
-  home: Community | null
-  setHomeId: (id: string) => void
-  /** Miles from home, or null when no home is chosen / community unknown. */
-  distanceTo: (communityId: string) => number | null
-  describeDistance: (communityId: string) => { text: string; tone: DistanceTone }
+  /** The community distances are measured from (your town). */
+  home: string | null
+  homePoint: Point | null
+  setHome: (name: string) => void
+  /** Approximate centre of a community, from its members' locations. */
+  pointOf: (community: string | null | undefined) => Point | null
+  describeDistance: (listing: Listing) => { text: string; tone: DistanceTone; km: number | null }
 }
 
 const CommunityContext = createContext<CommunityContextValue | null>(null)
 
-function readHomeId(): string | null {
+function readHome(): string | null {
   try {
     return localStorage.getItem(HOME_KEY)
   } catch {
@@ -34,65 +35,76 @@ function readHomeId(): string | null {
 
 export function CommunityProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
-  const [communities, setCommunities] = useState<Community[]>([])
+  const [communities, setCommunities] = useState<CommunityStat[]>([])
+  const [centres, setCentres] = useState<Map<string, Point>>(() => new Map())
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [homeId, setHomeIdState] = useState<string | null>(() => readHomeId())
+  const [chosenHome, setChosenHome] = useState<string | null>(() => readHome())
 
   useEffect(() => {
     const controller = new AbortController()
-    listCommunities(controller.signal)
-      .then(({ data }) => setCommunities(data))
-      .catch((err: unknown) => {
-        if (err instanceof DOMException && err.name === 'AbortError') return
-        setError(err instanceof Error ? err.message : 'Could not load communities.')
+    Promise.all([
+      listCommunities(controller.signal),
+      // Public profiles carry lat/lng; averaging them per community gives a
+      // town centre to measure distances from. One small request, cached.
+      listUsers({ limit: 200 }, controller.signal),
+    ])
+      .then(([communityRes, userRes]) => {
+        setCommunities(communityRes.data)
+        const sums = new Map<string, { lat: number; lng: number; n: number }>()
+        for (const u of userRes.data) {
+          if (!u.community || u.latitude == null || u.longitude == null) continue
+          const s = sums.get(u.community) ?? { lat: 0, lng: 0, n: 0 }
+          sums.set(u.community, { lat: s.lat + u.latitude, lng: s.lng + u.longitude, n: s.n + 1 })
+        }
+        setCentres(new Map([...sums].map(([name, s]) => [name, { lat: s.lat / s.n, lng: s.lng / s.n }])))
       })
+      .catch(() => {})
       .finally(() => setLoading(false))
     return () => controller.abort()
   }, [])
 
-  function setHomeId(id: string) {
-    setHomeIdState(id)
+  function setHome(name: string) {
+    setChosenHome(name)
     try {
-      localStorage.setItem(HOME_KEY, id)
+      localStorage.setItem(HOME_KEY, name)
     } catch {
-      // Not persisted - it'll just reset next visit.
+      // Not persisted - resets next visit.
     }
   }
 
-  // A signed-in user's account community is the default home on this device.
-  const accountCommunity = user?.community_id ?? null
-  const effectiveHomeId = homeId ?? accountCommunity
+  const home = chosenHome || user?.community || null
+  // Your own saved location beats the town average when it's your town.
+  const ownPoint =
+    user && user.community === home && user.latitude != null && user.longitude != null
+      ? { lat: user.latitude, lng: user.longitude }
+      : null
 
   const value = useMemo<CommunityContextValue>(() => {
-    const byId = new Map(communities.map((community) => [community.id, community]))
-    const home = (effectiveHomeId && byId.get(effectiveHomeId)) || null
-
-    function distanceTo(communityId: string) {
-      const other = byId.get(communityId)
-      return home && other ? distanceMiles(home, other) : null
-    }
+    const pointOf = (community: string | null | undefined) => (community ? (centres.get(community) ?? null) : null)
+    const homePoint = ownPoint ?? pointOf(home)
 
     return {
       communities,
       loading,
-      error,
       home,
-      setHomeId,
-      distanceTo,
-      describeDistance(communityId) {
-        const name = byId.get(communityId)?.name ?? 'Unknown community'
-        if (home?.id === communityId) return { text: `In ${name}`, tone: 'home' }
-        const miles = distanceTo(communityId)
-        if (miles === null) return { text: name, tone: 'unknown' }
-        const rounded = miles < 1 ? '<1' : String(Math.round(miles))
+      homePoint,
+      setHome,
+      pointOf,
+      describeDistance(listing) {
+        const town = listing.owner.community ?? 'Unknown town'
+        if (home && listing.owner.community === home) return { text: `In ${town}`, tone: 'home', km: 0 }
+        const theirs = pointOf(listing.owner.community)
+        const km = listing.distance_km ?? (homePoint && theirs ? distanceKm(homePoint, theirs) : null)
+        if (km == null) return { text: town, tone: 'unknown', km: null }
         return {
-          text: `${rounded} mi away · ${name}`,
-          tone: miles <= NEARBY_MILES ? 'near' : 'far',
+          text: `${km < 1 ? '<1' : Math.round(km)} km · ${town}`,
+          tone: km <= NEARBY_KM ? 'near' : 'far',
+          km,
         }
       },
     }
-  }, [communities, loading, error, effectiveHomeId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [communities, centres, loading, home, ownPoint?.lat, ownPoint?.lng])
 
   return <CommunityContext.Provider value={value}>{children}</CommunityContext.Provider>
 }

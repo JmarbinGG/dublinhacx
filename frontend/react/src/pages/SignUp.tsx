@@ -10,7 +10,8 @@ export default function SignUp() {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const { signup } = useAuth()
-  const { communities, home, setHomeId } = useCommunities()
+  const { communities, home, setHome } = useCommunities()
+  const [town, setTown] = useState(home ?? '')
   const navigate = useNavigate()
 
   async function handleSubmit(event: React.FormEvent) {
@@ -18,8 +19,9 @@ export default function SignUp() {
     setError(null)
     setSubmitting(true)
     try {
-      await signup(name, email, password, home?.id ?? null)
-      navigate('/app')
+      await signup({ name: name.trim(), email: email.trim(), password, community: town.trim() || undefined })
+      if (town.trim()) setHome(town.trim())
+      navigate('/profile/edit')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong.')
     } finally {
@@ -30,21 +32,20 @@ export default function SignUp() {
   return (
     <div className="auth-layout">
       <div className="auth-pitch">
-        <h2>Why byproduct.?</h2>
+        <h2>Why Banyan?</h2>
         <p>
-          Your neighbor two miles away probably doesn't have a hay baler, heirloom seed corn
-          or a farrier. Someone twelve miles away might. byproduct. connects nearby rural
-          communities so specialized goods and skills find the people who need them.
+          Every village has a pump set sitting idle, a roll of drip pipe left over, someone who can fix a tractor or
+          stitch a blouse. Banyan helps them find the neighbour - or the next town - that needs them.
         </p>
         <ul>
-          <li>Find specialized trade beyond walking distance</li>
-          <li>Trade directly - cash or barter, no middleman fees</li>
-          <li>Built for slow connections: text first, photos only when you ask</li>
+          <li>Lend, swap, give or sell - you choose</li>
+          <li>Post a job or ask for help, not just things</li>
+          <li>Built for slow connections: text first, photos only when you tap</li>
         </ul>
       </div>
 
       <section className="auth-panel">
-        <h1>Sign Up</h1>
+        <h1>Join Banyan</h1>
 
         <form onSubmit={handleSubmit}>
           <div className="form-field">
@@ -53,6 +54,7 @@ export default function SignUp() {
               id="signup-name"
               type="text"
               required
+              maxLength={80}
               value={name}
               onChange={(event) => setName(event.target.value)}
               autoComplete="name"
@@ -69,6 +71,7 @@ export default function SignUp() {
               onChange={(event) => setEmail(event.target.value)}
               autoComplete="email"
             />
+            <span className="field-hint">For signing in only - never shown to others.</span>
           </div>
 
           <div className="form-field">
@@ -83,22 +86,23 @@ export default function SignUp() {
               onChange={(event) => setPassword(event.target.value)}
               autoComplete="new-password"
             />
+            <span className="field-hint">At least 8 characters.</span>
           </div>
 
           <div className="form-field">
-            <label htmlFor="signup-community">Your community</label>
-            <select
-              id="signup-community"
-              value={home?.id ?? ''}
-              onChange={(event) => setHomeId(event.target.value)}
-            >
-              <option value="">Choose where you are</option>
-              {communities.map((community) => (
-                <option key={community.id} value={community.id}>
-                  {community.name}
-                </option>
+            <label htmlFor="signup-town">Your town</label>
+            <input
+              id="signup-town"
+              list="signup-towns"
+              maxLength={120}
+              value={town}
+              onChange={(event) => setTown(event.target.value)}
+            />
+            <datalist id="signup-towns">
+              {communities.map((c) => (
+                <option key={c.name} value={c.name} />
               ))}
-            </select>
+            </datalist>
           </div>
 
           {error && (
@@ -108,12 +112,12 @@ export default function SignUp() {
           )}
 
           <button type="submit" className="primary-button" disabled={submitting}>
-            {submitting ? 'Creating account...' : 'Sign Up'}
+            {submitting ? 'Creating account...' : 'Join'}
           </button>
         </form>
 
         <p className="auth-switch">
-          Already have an account? <Link to="/signin">Sign in</Link>
+          Already a member? <Link to="/signin">Sign in</Link>
         </p>
       </section>
     </div>

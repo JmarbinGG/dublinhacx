@@ -1,31 +1,31 @@
 import { createContext, useContext, useMemo, useState } from 'react'
 
 /**
- * Tracks how many KB of listing images the user chose to load this calendar
- * month, against a budget they set. Images never load on their own (see
- * DataBudgetImage) - this is the running total of explicit "Load image" taps.
- *
- * It counts listing photos only; it can't see the rest of the phone's data.
+ * Data-saver settings and meter. Tracks KB of listing photos the user chose
+ * to load this calendar month against a budget they set, plus the small AI
+ * answers they asked for. Images never load on their own (DataBudgetImage).
  */
 
-const STORAGE_KEY = 'byproduct.dataBudget'
+const STORAGE_KEY = 'banyan.dataBudget'
 export const DEFAULT_BUDGET_MB = 25
 export const BUDGET_CHOICES_MB = [5, 10, 25, 50, 100]
+/** A compact AI answer is roughly this big over the wire. */
+export const AI_ANSWER_KB = 2
 
-type Stored = { month: string; usedKb: number; budgetMb: number }
+type Stored = { month: string; usedKb: number; aiKb: number; budgetMb: number; aiAnswers: boolean }
 
 function currentMonth() {
   return new Date().toISOString().slice(0, 7) // "2026-10"
 }
 
 function readStored(): Stored {
-  const fresh = { month: currentMonth(), usedKb: 0, budgetMb: DEFAULT_BUDGET_MB }
+  const fresh: Stored = { month: currentMonth(), usedKb: 0, aiKb: 0, budgetMb: DEFAULT_BUDGET_MB, aiAnswers: true }
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return fresh
-    const stored = JSON.parse(raw) as Stored
-    // New month: keep the budget setting, reset the meter.
-    return stored.month === fresh.month ? stored : { ...fresh, budgetMb: stored.budgetMb }
+    const stored = { ...fresh, ...(JSON.parse(raw) as Partial<Stored>) }
+    // New month: keep the settings, reset the meters.
+    return stored.month === fresh.month ? stored : { ...stored, month: fresh.month, usedKb: 0, aiKb: 0 }
   } catch {
     return fresh
   }
@@ -35,19 +35,24 @@ function writeStored(value: Stored) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(value))
   } catch {
-    // Not persisted - the meter just resets on reload.
+    // Not persisted - the meter resets on reload.
   }
 }
 
 type DataBudgetValue = {
   usedKb: number
+  aiKb: number
   budgetKb: number
   budgetMb: number
+  /** Whether "Ask AI" overviews and the assistant are switched on. */
+  aiAnswers: boolean
   setBudgetMb: (mb: number) => void
+  setAiAnswers: (on: boolean) => void
   resetUsage: () => void
   /** Count an image the user chose to load. Re-showing one already loaded
-   * this session is free (the browser cache serves it), so it isn't counted. */
+   * this session is free (the browser cache serves it). */
   recordLoad: (src: string, kb: number) => void
+  recordAi: (kb: number) => void
   isLoaded: (src: string) => boolean
 }
 
@@ -65,15 +70,19 @@ export function DataBudgetProvider({ children }: { children: React.ReactNode }) 
   const value = useMemo<DataBudgetValue>(
     () => ({
       usedKb: stored.usedKb,
+      aiKb: stored.aiKb,
       budgetMb: stored.budgetMb,
       budgetKb: stored.budgetMb * 1024,
+      aiAnswers: stored.aiAnswers,
       setBudgetMb: (mb) => update({ ...stored, budgetMb: mb }),
-      resetUsage: () => update({ ...stored, usedKb: 0 }),
+      setAiAnswers: (on) => update({ ...stored, aiAnswers: on }),
+      resetUsage: () => update({ ...stored, usedKb: 0, aiKb: 0 }),
       recordLoad(src, kb) {
         if (loaded.has(src)) return
         setLoaded(new Set(loaded).add(src))
         update({ ...stored, month: currentMonth(), usedKb: stored.usedKb + kb })
       },
+      recordAi: (kb) => update({ ...stored, month: currentMonth(), aiKb: stored.aiKb + kb }),
       isLoaded: (src) => loaded.has(src),
     }),
     [stored, loaded],

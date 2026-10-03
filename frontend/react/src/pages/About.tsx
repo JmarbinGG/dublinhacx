@@ -1,34 +1,41 @@
 export default function About() {
   return (
     <section className="prose">
-      <h1>About Us</h1>
+      <h1>About Banyan</h1>
       <p>
-        byproduct. is a marketplace for clusters of small rural communities. Listings show which
-        community they're in and how far away it is, so you can tell at a glance what's worth
-        the drive.
+        The banyan tree is where a village gathers. Its branches send down roots that become new trunks, until one
+        tree is a small forest. Banyan works the same way: each town is its own centre, and all of them are
+        connected.
       </p>
 
-      <h2>Why use an app to reach a town 12 miles away?</h2>
-      <p>
-        For everyday things you walk next door. For specialized things - a rare seed variety, a
-        hay baler for two days, a farrier, a ton of feed oats - your immediate neighbors usually
-        can't help. Those live a few communities over, and that's what byproduct. surfaces.
-      </p>
+      <h2>What people share</h2>
       <ul>
-        <li>Specialized trade first: seeds, heavy tools, skills and services</li>
-        <li>Cash or barter - say what you'd take in exchange</li>
-        <li>Distances and communities on every listing</li>
+        <li>
+          <strong>Materials</strong> - leftover bricks, drip pipe, seed, fabric, timber
+        </li>
+        <li>
+          <strong>Equipment and tools</strong> - pump sets, sprayers, tillers, ladders, sewing machines
+        </li>
+        <li>
+          <strong>Skills and jobs</strong> - tractor repair, tailoring, rooftop solar fitting, tuition, harvest help
+        </li>
       </ul>
+      <p>Lend it, swap it, give it away or charge for it. Or post what you need and let someone offer.</p>
 
       <h2>Built for slow, capped connections</h2>
       <ul>
-        <li>Listings are text first and load instantly</li>
-        <li>Photos never load on their own. Each one shows its size, and you tap to load it</li>
-        <li>A monthly image budget keeps track of what you've spent</li>
-        <li>Works offline with the last listings you saw. Posts made offline sync later</li>
+        <li>Listings are text first and load quickly</li>
+        <li>Photos never load on their own - each shows its size, and you tap to load it</li>
+        <li>A monthly data budget keeps track of what photos and AI answers have cost</li>
+        <li>The last listings you saw stay readable offline, and posts made offline send later</li>
       </ul>
 
-      <p>Built at IslandHacks 2026.</p>
+      <h2>AI, carefully</h2>
+      <p>
+        "Ask AI" and the assistant help you find the right listing or person. They only point to real listings,
+        every answer is marked as AI-generated, and regular search always works without them. You can switch them
+        off on the Data saver page.
+      </p>
     </section>
   )
 }

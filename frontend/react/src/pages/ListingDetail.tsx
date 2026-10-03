@@ -1,18 +1,26 @@
+import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { deleteListing, updateListing } from '../api/listings'
 import { useAuth } from '../auth/AuthContext'
+import Avatar from '../components/Avatar'
+import ContactLink from '../components/ContactLink'
 import DataBudgetImage from '../components/DataBudgetImage'
 import { ErrorState, Loading } from '../components/States'
 import { useCommunities } from '../context/CommunityContext'
-import { useItem } from '../hooks/useItems'
+import { useListing, useProfile } from '../hooks/useItems'
 import { timeAgo } from '../lib/geo'
-import { categoryLabel } from '../types'
+import { STATUSES, exchangeLabel, kindLabel, typeLabel, type ListingStatus } from '../types'
 
 export default function ListingDetail() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
   const { user, token } = useAuth()
   const { describeDistance } = useCommunities()
-  const { data: item, loading, error, cachedAt } = useItem(id, token)
+  const { data: listing, loading, error, cachedAt, reload } = useListing(id)
+  // The owner's public contact lives on their profile.
+  const owner = useProfile(listing ? String(listing.owner.id) : null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
 
   const backButton = (
     <button type="button" className="back" onClick={() => navigate(-1)}>
@@ -20,7 +28,7 @@ export default function ListingDetail() {
     </button>
   )
 
-  if (loading) {
+  if (loading && !listing) {
     return (
       <section>
         {backButton}
@@ -29,30 +37,51 @@ export default function ListingDetail() {
     )
   }
 
-  if (error || !item) {
+  if (error || !listing) {
     return (
       <section>
         {backButton}
-        <ErrorState message={error ?? 'That listing could not be found.'} />
-        <Link to="/search">Back to all listings</Link>
+        <ErrorState message={error ?? 'That listing could not be found.'} onRetry={reload} />
+        <Link to="/search">Back to everything shared</Link>
       </section>
     )
   }
 
-  const distance = describeDistance(item.community_id)
-  const isMine = user != null && item.owner_id === user.id
-  // Built here from the email alone (never a stored link), so the href can
-  // only ever be a mailto:.
-  const mailto = item.contact_email
-    ? `mailto:${encodeURIComponent(item.contact_email)}?subject=${encodeURIComponent(`byproduct.: ${item.title}`)}`
-    : null
+  const distance = describeDistance(listing)
+  const isMine = user?.id === listing.owner.id
+
+  async function setStatus(status: ListingStatus) {
+    if (!token || !listing) return
+    setBusy(true)
+    setActionError(null)
+    try {
+      await updateListing(listing.id, { status }, token)
+      reload()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Could not update.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function remove() {
+    if (!token || !listing || !window.confirm(`Delete "${listing.title}"? This can't be undone.`)) return
+    setBusy(true)
+    try {
+      await deleteListing(listing.id, token)
+      navigate(`/users/${listing.owner.id}`)
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Could not delete.')
+      setBusy(false)
+    }
+  }
 
   const rows: [string, string | null | undefined][] = [
-    ['Price / exchange', item.price_or_exchange],
-    ['Quantity', item.quantity],
-    ['Posted by', item.owner],
-    ['Posted', timeAgo(item.created_at)],
-    ['Tags', item.tags?.split(',').join(', ')],
+    ['Exchange', [exchangeLabel(listing.exchange), listing.price].filter(Boolean).join(' · ')],
+    ['Quantity', listing.quantity],
+    ['Category', listing.category],
+    ['Tags', listing.tags.join(', ')],
+    ['Posted', timeAgo(listing.created_at)],
   ]
 
   return (
@@ -60,15 +89,17 @@ export default function ListingDetail() {
       {backButton}
 
       <div className="market-card__badges">
-        <span className={`badge badge--${item.category}`}>{categoryLabel(item.category)}</span>
+        <span className={`badge badge--${listing.type}`}>{typeLabel(listing.type)}</span>
+        <span className={`badge badge--kind-${listing.kind}`}>{kindLabel(listing)}</span>
         <span className={`distance-badge distance-badge--${distance.tone}`}>{distance.text}</span>
+        {listing.status !== 'available' && <span className="badge badge--status">{listing.status}</span>}
       </div>
-      <h1>{item.title}</h1>
-      {item.description && <p className="detail-desc">{item.description}</p>}
+      <h1>{listing.title}</h1>
+      {listing.description && <p className="detail-desc">{listing.description}</p>}
 
-      {item.image_url && (
+      {listing.image && (
         <div className="detail-image">
-          <DataBudgetImage src={item.image_url} sizeKb={item.image_size_kb} alt={item.title} />
+          <DataBudgetImage src={listing.image} alt={listing.title} />
         </div>
       )}
 
@@ -83,33 +114,62 @@ export default function ListingDetail() {
           ))}
       </dl>
 
-      <div id="connect" className="connect-box">
-        {isMine ? (
-          <p>This is your listing.</p>
-        ) : !user ? (
-          <>
-            <p>Sign in to see contact details and make an offer.</p>
-            <Link to="/signin" className="primary-button">
-              Sign in to connect
-            </Link>
-          </>
-        ) : cachedAt ? (
-          <p>You're offline - contact details will show when you reconnect.</p>
-        ) : mailto ? (
-          <>
-            <p>
-              Reach out to {item.owner ?? 'the owner'} to ask a question, offer cash or propose a
-              trade.
+      <Link to={`/users/${listing.owner.id}`} className="owner-row">
+        <Avatar name={listing.owner.name} />
+        <span>
+          <strong>{listing.owner.name}</strong>
+          {listing.owner.community && <span className="owner-row__town">{listing.owner.community}</span>}
+        </span>
+        <span className="owner-row__more">View profile &rarr;</span>
+      </Link>
+
+      {isMine ? (
+        <div className="owner-tools">
+          <Link to={`/listings/${listing.id}/edit`} className="secondary-button">
+            Edit
+          </Link>
+          <label className="filter-select">
+            <span>Status</span>
+            <select value={listing.status} disabled={busy} onChange={(e) => setStatus(e.target.value as ListingStatus)}>
+              {STATUSES.map((status) => (
+                <option key={status.id} value={status.id}>
+                  {status.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button type="button" className="secondary-button danger-button" disabled={busy} onClick={remove}>
+            Delete
+          </button>
+          {actionError && (
+            <p className="form-error" role="alert">
+              {actionError}
             </p>
-            <a className="primary-button" href={mailto}>
-              Connect / Offer
-            </a>
-            <p className="connect-box__email">{item.contact_email}</p>
-          </>
-        ) : (
-          <p>The owner didn't leave contact details.</p>
-        )}
-      </div>
+          )}
+        </div>
+      ) : (
+        <div id="connect" className="connect-box">
+          {cachedAt ? (
+            <p>You're offline - contact details will show when you reconnect.</p>
+          ) : owner.loading ? (
+            <p>Loading contact...</p>
+          ) : owner.data?.contact ? (
+            <>
+              <p>
+                {listing.kind === 'request'
+                  ? `Can you help ${listing.owner.name}? Get in touch:`
+                  : `Ask ${listing.owner.name} about it, or offer a trade:`}
+              </p>
+              <ContactLink contact={owner.data.contact} subject={`Banyan: ${listing.title}`} />
+            </>
+          ) : (
+            <p>
+              {listing.owner.name} hasn't shared contact details yet.{' '}
+              <Link to={`/users/${listing.owner.id}`}>See their profile</Link>.
+            </p>
+          )}
+        </div>
+      )}
     </section>
   )
 }

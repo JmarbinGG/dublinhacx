@@ -1,34 +1,47 @@
-import { useEffect, useState } from 'react'
-import { getItem, getMyItems, listItems } from '../api/items'
+import { useCallback, useEffect, useState } from 'react'
+import { isAbort } from '../api/client'
+import { getListing, listListings, type ListingQuery } from '../api/listings'
 import type { Cached } from '../api/offlineCache'
-import type { Item } from '../types'
+import { search } from '../api/search'
+import { getProfile, listUsers } from '../api/users'
+import type { ListingType } from '../types'
 
-type AsyncState<T> = {
+export type AsyncState<T> = {
   data: T | null
   loading: boolean
   error: string | null
   /** When showing a saved copy because the network is down. */
   cachedAt: number | null
+  reload: () => void
 }
 
-const INITIAL = { data: null, loading: true, error: null, cachedAt: null }
-
-/** Shared loading/error plumbing for a single fetch that depends on `key`. */
-function useFetch<T>(
-  key: string,
+/**
+ * Shared loading/error plumbing for a fetch that depends on `key`. While a
+ * new key loads, the previous data stays on screen (no flash of "Loading").
+ * Pass key = null to skip fetching.
+ */
+export function useFetch<T>(
+  key: string | null,
   fetcher: (signal: AbortSignal) => Promise<Cached<T>>,
 ): AsyncState<T> {
-  const [state, setState] = useState<AsyncState<T>>(INITIAL)
+  const [state, setState] = useState<Omit<AsyncState<T>, 'reload'>>({
+    data: null,
+    loading: key !== null,
+    error: null,
+    cachedAt: null,
+  })
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
+    if (key === null) return
     const controller = new AbortController()
-    setState(INITIAL)
+    setState((prev) => ({ ...prev, loading: true, error: null }))
 
     fetcher(controller.signal)
       .then(({ data, cachedAt }) => setState({ data, loading: false, error: null, cachedAt }))
       .catch((error: unknown) => {
         // A cancelled request is superseded by a newer one - not an error.
-        if (error instanceof DOMException && error.name === 'AbortError') return
+        if (isAbort(error)) return
         setState({
           data: null,
           loading: false,
@@ -38,29 +51,34 @@ function useFetch<T>(
       })
 
     return () => controller.abort()
-    // `fetcher` is recreated every render, so `key` is what actually decides
-    // when to refetch.
+    // `fetcher` is recreated every render, so `key` decides when to refetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key])
+  }, [key, attempt])
 
-  return state
+  const reload = useCallback(() => setAttempt((n) => n + 1), [])
+  return { ...state, reload }
 }
 
-/** Listings matching `query`. An empty query browses everything. */
-export function useItems(query: string) {
-  return useFetch(`items:${query}`, (signal) => listItems(query, signal))
+const keyOf = (prefix: string, value: unknown) => `${prefix}:${JSON.stringify(value)}`
+
+export function useListings(query: ListingQuery | null) {
+  return useFetch(query && keyOf('listings', query), (signal) => listListings(query!, signal))
 }
 
-/** A single listing. The token decides whether contact_email comes back. */
-export function useItem(id: string, token: string | null) {
-  return useFetch(`item:${id}:${token ?? ''}`, (signal) => getItem(id, token, signal))
+export function useListing(id: string | null) {
+  return useFetch(id && `listing:${id}`, (signal) => getListing(id!, signal))
 }
 
-/** The signed-in user's own listings; `[]` without a token. Changing
- * `refreshKey` refetches. */
-export function useMyItems(token: string | null, refreshKey = 0): AsyncState<Item[]> {
-  return useFetch(`mine:${token ?? ''}:${refreshKey}`, async (signal) => ({
-    data: token ? await getMyItems(token, signal) : [],
-    cachedAt: null,
-  }))
+export function useSearch(params: { q: string; type?: ListingType; community?: string; limit?: number } | null) {
+  return useFetch(params && keyOf('search', params), (signal) => search(params!, signal))
+}
+
+export function useProfile(id: string | null, includeClosed = false, refreshKey = 0) {
+  return useFetch(id && `profile:${id}:${includeClosed}:${refreshKey}`, (signal) =>
+    getProfile(id!, includeClosed, signal),
+  )
+}
+
+export function useUsers(params: { community?: string; q?: string; limit?: number } | null) {
+  return useFetch(params && keyOf('users', params), (signal) => listUsers(params!, signal))
 }
