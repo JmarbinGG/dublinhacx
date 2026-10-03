@@ -2,13 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { PAGE_SIZE } from '../api/listings'
 import { useAuth } from '../auth/AuthContext'
+import CategoryTiles from '../components/CategoryTiles'
 import FilterBar from '../components/FilterBar'
 import Icon from '../components/Icon'
 import ItemGrid from '../components/ItemGrid'
 import { SkeletonGrid } from '../components/States'
 import { NEARBY_KM, useCommunities } from '../context/CommunityContext'
 import { useDataBudget } from '../context/DataBudgetContext'
-import { useListings } from '../hooks/useItems'
+import { useListings, useSummary } from '../hooks/useItems'
 import { useSmartSearch } from '../hooks/useSmartSearch'
 import { filterExchange, readFilters, toListingQuery } from '../lib/filters'
 import { timeAgo } from '../lib/geo'
@@ -57,6 +58,10 @@ export default function SearchResults() {
     token,
   )
 
+  // Category tiles show only when the search box is empty (same cached summary as home).
+  const near = homePoint ? { lat: Math.round(homePoint.lat * 100) / 100, lng: Math.round(homePoint.lng * 100) / 100 } : null
+  const summary = useSummary(near, !filters.q)
+
   // Browse feed (no query, or plain search chosen).
   const page = Math.min(MAX_PAGES, Math.max(1, Number(params.get('page')) || 1))
   const browseQuery = toListingQuery(filters, home, homePoint, PAGE_SIZE * page)
@@ -94,6 +99,7 @@ export default function SearchResults() {
 
   return (
     <section className="stack">
+      {!filters.q && <CategoryTiles summary={summary.data} />}
       <FilterBar />
 
       <div className="section-head">

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { isAbort } from '../api/client'
 import { getListing, listListings, type ListingQuery } from '../api/listings'
+import { getSummary } from '../api/summary'
 import type { Cached } from '../api/offlineCache'
 import { search } from '../api/search'
 import { getProfile, listUsers } from '../api/users'
@@ -81,4 +82,9 @@ export function useProfile(id: string | null, includeClosed = false, refreshKey 
 
 export function useUsers(params: { community?: string; q?: string; limit?: number } | null) {
   return useFetch(params && keyOf('users', params), (signal) => listUsers(params!, signal))
+}
+
+/** Home summary: per category, count + four nearest. One request, cached. */
+export function useSummary(near: { lat: number; lng: number } | null, enabled = true) {
+  return useFetch(enabled ? `summary:${near ? `${near.lat},${near.lng}` : ''}` : null, (signal) => getSummary(near, signal))
 }

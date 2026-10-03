@@ -10,6 +10,7 @@ import Landing from './pages/Landing'
 // service worker).
 const About = lazy(() => import('./pages/About'))
 const Communities = lazy(() => import('./pages/Communities'))
+const CategoryPage = lazy(() => import('./pages/CategoryPage'))
 const CommunityPage = lazy(() => import('./pages/CommunityPage'))
 const CreateListing = lazy(() => import('./pages/CreateListing'))
 const DataSaver = lazy(() => import('./pages/DataSaver'))
@@ -33,6 +34,7 @@ export default function App() {
       <Route path="/" element={<Landing />} />
       <Route element={<AppLayout />}>
         <Route path="/app" element={<Home />} />
+        <Route path="/app/c/:group" element={<CategoryPage />} />
         <Route path="/search" element={<SearchResults />} />
         <Route path="/communities" element={<Communities />} />
         <Route path="/communities/:name" element={<CommunityPage />} />

@@ -89,7 +89,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       pointOf,
       describeDistance(listing) {
         const town = listing.owner.community ?? 'Unknown town'
-        if (home && listing.owner.community === home) return { text: `In ${town}`, tone: 'home', km: 0 }
+        if (home && listing.owner.community === home) return { text: 'Your town', tone: 'home', km: 0 }
         const theirs = pointOf(listing.owner.community)
         const km = listing.distance_km ?? (homePoint && theirs ? distanceKm(homePoint, theirs) : null)
         if (km == null) return { text: town, tone: 'unknown', km: null }

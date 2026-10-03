@@ -5,13 +5,15 @@ import { SCOPES, SORTS, readFilters } from '../lib/filters'
 import { EXCHANGES, LISTING_TYPES } from '../types'
 import HomePicker from './HomePicker'
 import Icon from './Icon'
+import MorphIcon from './MorphIcon'
 
 /**
- * Three inline filters (type, distance, exchange) and one "More filters"
- * sheet for the rest. All state lives in the URL, so changing a filter
- * refetches and the view can be shared.
+ * Two inline filters (distance, exchange) and one "More" sheet for the
+ * rest. Type is the category choice, so it lives in the sheet (and is
+ * hidden on category pages, where the page is the type). All state lives
+ * in the URL, so the view can be shared and back/forward work.
  */
-export default function FilterBar() {
+export default function FilterBar({ showType = true, showKind = true }: { showType?: boolean; showKind?: boolean }) {
   const [params, setParams] = useSearchParams()
   const filters = readFilters(params)
   const { home, homePoint } = useCommunities()
@@ -36,21 +38,15 @@ export default function FilterBar() {
     return () => document.removeEventListener('keydown', onKey)
   }, [sheetOpen])
 
-  const extraActive = [filters.kind, filters.sort !== 'newest' ? 'sort' : '', params.get('plain')].filter(Boolean).length
+  const extraActive = [
+    showType && filters.type,
+    showKind && filters.kind,
+    filters.sort !== 'newest' ? 'sort' : '',
+    params.get('plain'),
+  ].filter(Boolean).length
 
   return (
     <div className="filters">
-      <label className="field field--inline">
-        <span className="visually-hidden">Type</span>
-        <select value={filters.type} onChange={(e) => set('type', e.target.value)}>
-          <option value="">All types</option>
-          {LISTING_TYPES.map((type) => (
-            <option key={type.id} value={type.id}>
-              {type.label}
-            </option>
-          ))}
-        </select>
-      </label>
       <label className="field field--inline">
         <span className="visually-hidden">Distance</span>
         <select
@@ -82,8 +78,8 @@ export default function FilterBar() {
         aria-controls="filter-sheet"
         onClick={() => setSheetOpen(true)}
       >
-        <Icon name="sliders" />
         More{extraActive > 0 && ` (${extraActive})`}
+        <MorphIcon name="chevron" on={sheetOpen} />
       </button>
 
       {sheetOpen && (
@@ -97,14 +93,29 @@ export default function FilterBar() {
               </button>
             </div>
             <HomePicker id="sheet-home" />
-            <label className="field">
-              <span>Offers or wanted</span>
-              <select value={filters.kind} onChange={(e) => set('kind', e.target.value)}>
-                <option value="">Both</option>
-                <option value="offer">Offers</option>
-                <option value="request">Wanted and jobs</option>
-              </select>
-            </label>
+            {showType && (
+              <label className="field">
+                <span>Type</span>
+                <select value={filters.type} onChange={(e) => set('type', e.target.value)}>
+                  <option value="">All types</option>
+                  {LISTING_TYPES.map((type) => (
+                    <option key={type.id} value={type.id}>
+                      {type.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {showKind && (
+              <label className="field">
+                <span>Offers or wanted</span>
+                <select value={filters.kind} onChange={(e) => set('kind', e.target.value)}>
+                  <option value="">Both</option>
+                  <option value="offer">Offers</option>
+                  <option value="request">Help wanted</option>
+                </select>
+              </label>
+            )}
             <label className="field">
               <span>Sort</span>
               <select

@@ -4,6 +4,7 @@ import { useAuth } from '../auth/AuthContext'
 import Avatar from '../components/Avatar'
 import ContactLink from '../components/ContactLink'
 import DataBudgetImage from '../components/DataBudgetImage'
+import MorphIcon from '../components/MorphIcon'
 import RuralMarketCard from '../components/RuralMarketCard'
 import { Empty, ErrorState, Loading } from '../components/States'
 import { useProfile } from '../hooks/useItems'
@@ -28,6 +29,7 @@ export default function Profile() {
   const location = useLocation()
   const isMe = user != null && String(user.id) === id
   const queue = useQueue()
+  const [closedOpen, setClosedOpen] = useState(false)
   // Refetch when the offline queue drains, so freshly posted listings appear.
   const { data: profile, loading, error, reload } = useProfile(id, isMe, isMe ? queue.length : 0)
 
@@ -121,8 +123,10 @@ export default function Profile() {
       )}
 
       {isMe && closed.length > 0 && (
-        <details className="closed-listings">
-          <summary>Closed ({closed.length})</summary>
+        <details className="closed-listings" onToggle={(e) => setClosedOpen((e.currentTarget as HTMLDetailsElement).open)}>
+          <summary>
+            Closed ({closed.length}) <MorphIcon name="chevron" on={closedOpen} />
+          </summary>
           <div className="grid">
             {closed.map((listing) => (
               <RuralMarketCard
