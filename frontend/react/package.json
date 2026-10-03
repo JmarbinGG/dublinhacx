@@ -17,7 +17,8 @@
     "preact": "^11.0.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-router-dom": "^7.18.3"
+    "react-router-dom": "^7.18.3",
+    "use-scramble": "^2.2.15"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",

@@ -1,8 +1,12 @@
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Suspense, lazy, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import BanyanTree from '../components/BanyanTree'
 import { Wordmark } from '../components/Navbar'
+import ScrambleHeadline from '../components/ScrambleHeadline'
 import { TREE } from '../generated/art'
+
+// Only fetched when someone taps Get started.
+const LanguageSheet = lazy(() => import('../components/LanguageSheet'))
 
 /** The logo draws itself once per session (motion-graphics-toolkit: a logo
  * animation is a once-per-session event, not per load). The tree below is
@@ -20,6 +24,9 @@ function firstLogoThisSession(): boolean {
 /** Splash page - separate from the app (no top bar, footer or assistant). */
 export default function Landing() {
   const [drawLogo] = useState(firstLogoThisSession)
+  const [choosing, setChoosing] = useState(false)
+  const navigate = useNavigate()
+
   return (
     <div className="landing">
       <header className="landing__top">
@@ -31,15 +38,15 @@ export default function Landing() {
 
       <main className="landing__body">
         <div className="landing__text">
-          <h1>Share what you have. Find what you need.</h1>
+          <ScrambleHeadline />
           <p>
             A pump set sitting idle, a roll of drip pipe left over, someone who can fix a tractor or stitch a blouse.
             Banyan helps them reach the neighbour, or the next town over, that needs them.
           </p>
           <div className="landing__actions">
-            <Link to="/app" className="primary-button">
-              See what's shared nearby
-            </Link>
+            <button type="button" className="primary-button" onClick={() => setChoosing(true)}>
+              Get started
+            </button>
             <Link to="/signup" className="secondary-button">
               Join
             </Link>
@@ -52,6 +59,12 @@ export default function Landing() {
           <BanyanTree />
         </div>
       </main>
+
+      {choosing && (
+        <Suspense fallback={null}>
+          <LanguageSheet onClose={() => setChoosing(false)} onDone={() => navigate('/app')} />
+        </Suspense>
+      )}
     </div>
   )
 }
