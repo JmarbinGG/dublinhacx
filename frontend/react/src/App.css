@@ -1776,6 +1776,7 @@ textarea {
    languages can never shift the layout. Inline for buttons and links,
    block for the headline and paragraphs. */
 .scramble__stack {
+  position: relative;
   display: inline-grid;
 }
 
@@ -1783,8 +1784,23 @@ textarea {
   display: grid;
 }
 
-.scramble__stack > * {
+/* Only the invisible sizers decide the box size. The live text is laid
+   over them and taken out of flow, because overflow mode's in-between
+   frames (mixed scripts + random letters) can briefly run longer than any
+   finished version - in flow, that extra line pushed the page down. */
+.scramble__sizer {
   grid-area: 1 / 1;
+}
+
+.scramble__text {
+  position: absolute;
+  inset: 0;
+}
+
+/* Buttons and links: keep the changing word centred in its box. */
+.scramble__stack:not(.scramble__stack--block) .scramble__text {
+  text-align: center;
+  white-space: nowrap;
 }
 
 .scramble__sizer {
