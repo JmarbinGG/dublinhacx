@@ -75,3 +75,40 @@ class Session(Base):
     token = Column(String, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class AssistantSession(Base):
+    """One AI assistant conversation. The server owns the history - clients
+    only ever send the session id and the new message."""
+
+    __tablename__ = "assistant_sessions"
+
+    id = Column(String, primary_key=True)  # random, unguessable
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), index=True)  # None = anonymous
+    community = Column(String)  # shopper's community name, for distances
+    filters = Column(Text)  # JSON of chip-chosen filters: type, kind, exchange, category, max_km
+    turns = Column(Integer, nullable=False, default=0)
+    tool_calls = Column(Integer, nullable=False, default=0)
+    tokens_used = Column(Integer, nullable=False, default=0)
+    flags = Column(Integer, nullable=False, default=0)  # moderation hits
+    status = Column(String, nullable=False, default="active")  # active | reported | closed
+    report_reason = Column(String)  # redacted
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    last_active = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    messages = relationship(
+        "AssistantMessage", cascade="all, delete-orphan", order_by="AssistantMessage.id"
+    )
+
+
+class AssistantMessage(Base):
+    """Stored transcript line. Content is redacted (no emails/phone numbers)."""
+
+    __tablename__ = "assistant_messages"
+
+    id = Column(Integer, primary_key=True)
+    session_id = Column(String, ForeignKey("assistant_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    role = Column(String, nullable=False)  # user | assistant
+    content = Column(Text, nullable=False)
+    listing_ids = Column(String)  # comma-separated ids shown with an assistant reply
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)

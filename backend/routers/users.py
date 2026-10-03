@@ -1,45 +1,58 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, or_
+from sqlalchemy import or_
 from sqlalchemy.orm import Session as DbSession
 
+import communities
 from auth import current_user
 from database import get_db
-from models import Listing, User
-from routers.listings import haversine_km, listing_out
+from models import User
+from routers.listings import listing_out, origin_for
 from storage import delete_if_orphaned
 from schemas import CommunityOut, ProfileOut, UserPrivate, UserPublic, UserUpdate
+from textutil import MAX_QUERY_CHARS, like_pattern, query_words
 
 router = APIRouter(tags=["users"])
 
 
+def user_keyword_filter(q: Optional[str]):
+    clauses = []
+    for word in query_words(q):
+        like = like_pattern(word)
+        clauses.append(
+            or_(
+                User.name.ilike(like, escape="\\"),
+                User.bio.ilike(like, escape="\\"),
+                User.community.ilike(like, escape="\\"),
+            )
+        )
+    return clauses
+
+
 @router.get("/api/users", response_model=list[UserPublic])
 def list_users(
-    community: Optional[str] = None,
-    q: Optional[str] = Query(None, description="Keyword match on name, bio, community"),
+    community_id: Optional[str] = None,
+    q: Optional[str] = Query(None, max_length=MAX_QUERY_CHARS, description="Keyword match on name, bio, community"),
+    from_community: Optional[str] = Query(None, description="With max_km: people within max_km of this community"),
     lat: Optional[float] = Query(None, ge=-90, le=90),
     lng: Optional[float] = Query(None, ge=-180, le=180),
-    radius_km: Optional[float] = Query(None, gt=0),
+    max_km: Optional[float] = Query(None, gt=0),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: DbSession = Depends(get_db),
 ):
     query = db.query(User)
-    if community:
-        query = query.filter(User.community.ilike(community))
-    for word in (q or "").lower().split():
-        like = f"%{word}%"
-        query = query.filter(or_(User.name.ilike(like), User.bio.ilike(like), User.community.ilike(like)))
+    if community_id:
+        query = query.filter(User.community == communities.resolve(db, community_id).name)
+    query = query.filter(*user_keyword_filter(q))
     users = query.order_by(User.id).all()
 
-    if lat is not None and lng is not None:
-        located = [
-            (haversine_km(lat, lng, u.latitude, u.longitude), u)
-            for u in users
-            if u.latitude is not None and u.longitude is not None
-        ]
-        located = [p for p in located if radius_km is None or p[0] <= radius_km]
+    origin = origin_for(db, from_community, lat, lng)
+    if origin is not None:
+        index = communities.all_communities(db)
+        located = [(communities.distance_between(index, origin, u.community), u) for u in users]
+        located = [p for p in located if p[0] is not None and (max_km is None or p[0] <= max_km)]
         users = [u for _, u in sorted(located, key=lambda p: p[0])]
 
     return [UserPublic.model_validate(u) for u in users[offset : offset + limit]]
@@ -76,19 +89,7 @@ def get_profile(user_id: int, include_closed: bool = False, db: DbSession = Depe
 
 @router.get("/api/communities", response_model=list[CommunityOut])
 def list_communities(db: DbSession = Depends(get_db)):
-    """Every community with at least one member, busiest first."""
-    members = dict(
-        db.query(User.community, func.count(User.id))
-        .filter(User.community.isnot(None))
-        .group_by(User.community)
-        .all()
-    )
-    listings = dict(
-        db.query(User.community, func.count(Listing.id))
-        .join(Listing.owner)
-        .filter(User.community.isnot(None), Listing.status == "available")
-        .group_by(User.community)
-        .all()
-    )
-    out = [CommunityOut(name=name, members=n, listings=listings.get(name, 0)) for name, n in members.items()]
+    """Every community with at least one member, busiest first. `id` is the
+    slug every community_id / from_community parameter takes."""
+    out = [CommunityOut(**vars(c)) for c in communities.all_communities(db).values()]
     return sorted(out, key=lambda c: (-c.listings, c.name))

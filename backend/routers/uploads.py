@@ -1,14 +1,12 @@
 import io
 import os
-import threading
-import time
 import uuid
-from collections import defaultdict, deque
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from auth import current_user
+from limits import UPLOAD_LIMIT, hit
 from models import User
 from storage import UPLOAD_DIR, URL_PREFIX, size_kb
 
@@ -18,26 +16,9 @@ MAX_SIDE = 1024  # stored images are downscaled to fit this - low bandwidth
 WEBP_QUALITY = 80
 ALLOWED_FORMATS = {"JPEG", "PNG", "WEBP", "GIF"}
 
-RATE_LIMIT = 30  # uploads per user...
-RATE_WINDOW_S = 60 * 60  # ...per hour
-
 Image.MAX_IMAGE_PIXELS = MAX_PIXELS
 
-_recent: dict[int, deque] = defaultdict(deque)
-_recent_lock = threading.Lock()
-
 router = APIRouter(tags=["uploads"])
-
-
-def _check_rate_limit(user_id: int) -> None:
-    now = time.monotonic()
-    with _recent_lock:
-        stamps = _recent[user_id]
-        while stamps and now - stamps[0] > RATE_WINDOW_S:
-            stamps.popleft()
-        if len(stamps) >= RATE_LIMIT:
-            raise HTTPException(status_code=429, detail="Too many uploads - try again later")
-        stamps.append(now)
 
 
 def _reencode(contents: bytes) -> bytes:
@@ -73,7 +54,7 @@ def upload_image(file: UploadFile = File(...), user: User = Depends(current_user
     plus its size so the client can show it before loading.
 
     The original is never stored: it's re-encoded to WebP, max 1024px."""
-    _check_rate_limit(user.id)
+    hit(f"upload:user:{user.id}", UPLOAD_LIMIT)
 
     contents = file.file.read(MAX_BYTES + 1)
     if len(contents) > MAX_BYTES:

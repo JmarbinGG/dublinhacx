@@ -1,12 +1,13 @@
-import math
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import ValidationError
 from sqlalchemy import or_
 from sqlalchemy.orm import Query as OrmQuery, Session as DbSession, joinedload
 
+import communities
 from auth import current_user
+from communities import Community
 from database import get_db
 from models import Listing, User
 from storage import delete_if_orphaned
@@ -21,16 +22,9 @@ from schemas import (
     ListingType,
     ListingUpdate,
 )
+from textutil import MAX_QUERY_CHARS, like_pattern, query_words
 
 router = APIRouter(prefix="/api/listings", tags=["listings"])
-
-
-def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    r = 6371.0
-    p1, p2 = math.radians(lat1), math.radians(lat2)
-    dp, dl = p2 - p1, math.radians(lon2 - lon1)
-    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
-    return 2 * r * math.asin(math.sqrt(a))
 
 
 def listing_out(listing: Listing, distance_km: Optional[float] = None) -> ListingOut:
@@ -45,44 +39,77 @@ def base_query(db: DbSession) -> OrmQuery:
     return db.query(Listing).join(Listing.owner).options(joinedload(Listing.owner))
 
 
+def _word_clause(word: str):
+    like = like_pattern(word)
+    return or_(
+        Listing.title.ilike(like, escape="\\"),
+        Listing.description.ilike(like, escape="\\"),
+        Listing.category.ilike(like, escape="\\"),
+        Listing.tags.ilike(like, escape="\\"),
+        User.community.ilike(like, escape="\\"),
+    )
+
+
 def keyword_filter(q: str):
-    """Every word must appear somewhere in the listing or its owner's community."""
-    clauses = []
-    for word in q.lower().split():
-        like = f"%{word}%"
-        clauses.append(
-            or_(
-                Listing.title.ilike(like),
-                Listing.description.ilike(like),
-                Listing.category.ilike(like),
-                Listing.tags.ilike(like),
-                User.community.ilike(like),
-            )
-        )
-    return clauses
+    """Every word (max 8) must appear somewhere in the listing or its owner's
+    community. % and _ in the query are matched literally."""
+    return [_word_clause(w) for w in query_words(q)]
 
 
-def apply_distance(
-    listings: list[Listing], lat: Optional[float], lng: Optional[float], radius_km: Optional[float]
-) -> list[ListingOut]:
-    """With lat/lng: nearest first, owners without a location last, optionally
-    cut to radius_km. Without: unchanged order, no distances."""
-    if lat is None or lng is None:
-        return [listing_out(l) for l in listings]
+def ranked_recall(query: OrmQuery, q: str, limit: int) -> list[Listing]:
+    """Looser than keyword_filter: listings matching ANY meaningful word,
+    best first (title hits count most). For natural-language questions like
+    "who can fix my tractor", where requiring every word finds nothing."""
+    words = query_words(q, drop_stopwords=True)
+    if not words:
+        return []
+    rows = query.filter(or_(*[_word_clause(w) for w in words])).all()
 
-    located, unlocated = [], []
-    for l in listings:
-        if l.owner.latitude is None or l.owner.longitude is None:
-            unlocated.append(l)
-            continue
-        d = haversine_km(lat, lng, l.owner.latitude, l.owner.longitude)
-        if radius_km is None or d <= radius_km:
-            located.append((d, l))
-    located.sort(key=lambda pair: pair[0])
-    out = [listing_out(l, d) for d, l in located]
-    if radius_km is None:
-        out += [listing_out(l) for l in unlocated]
-    return out
+    def score(l: Listing) -> tuple:
+        title, tags = (l.title or "").lower(), (l.tags or "").lower()
+        other = f"{l.category or ''} {l.description or ''}".lower()
+        s = sum(3 * (w in title) + 2 * (w in tags) + (w in other) for w in words)
+        return (-s, -l.id)
+
+    return sorted(rows, key=score)[:limit]
+
+
+def origin_for(
+    db: DbSession, from_community: Optional[str], lat: Optional[float], lng: Optional[float]
+) -> Optional[Community]:
+    """Where distances are measured from: a community centre, or a raw point
+    (e.g. the browser's location) - never a member's home."""
+    if from_community:
+        return communities.resolve(db, from_community)
+    if lat is not None and lng is not None:
+        return Community(id="", name="", lat=lat, lng=lng, members=0, listings=0)
+    return None
+
+
+def with_distances(
+    db: DbSession,
+    listings: list[Listing],
+    origin: Optional[Community],
+    min_km: Optional[float] = None,
+    max_km: Optional[float] = None,
+    sort: str = "newest",
+) -> list[tuple[Listing, Optional[float]]]:
+    """Attach distance from `origin`, apply the min/max band and sort.
+    Listings with unknown distance are dropped by a band and sorted last."""
+    if origin is None:
+        return [(l, None) for l in listings]
+    index = communities.all_communities(db)
+    pairs = [(l, communities.distance_between(index, origin, l.owner.community)) for l in listings]
+    if min_km is not None or max_km is not None:
+        pairs = [
+            (l, d) for l, d in pairs
+            if d is not None and (min_km is None or d > min_km) and (max_km is None or d <= max_km)
+        ]
+    if sort in ("nearest", "farthest"):
+        known = [p for p in pairs if p[1] is not None]
+        known.sort(key=lambda p: p[1], reverse=sort == "farthest")  # stable: newest first within ties
+        pairs = known + [p for p in pairs if p[1] is None]
+    return pairs
 
 
 def owned_listing(db: DbSession, listing_id: int, user: User) -> Listing:
@@ -99,16 +126,17 @@ def list_listings(
     type: Optional[ListingType] = None,
     kind: Optional[ListingKind] = None,
     status: Optional[ListingStatus] = "available",
-    category: Optional[str] = None,
-    community: Optional[str] = None,
-    exclude_community: Optional[str] = Query(
-        None, description="Hide listings from this community - for 'beyond my town' views"
-    ),
+    category: Optional[str] = Query(None, max_length=60),
+    community_id: Optional[str] = Query(None, description="Only this community (slug from /api/communities)"),
+    exclude_community_id: Optional[str] = Query(None, description="Everything except this community - 'other towns'"),
     owner_id: Optional[int] = None,
-    q: Optional[str] = Query(None, description="Plain keyword filter (not the AI search)"),
-    lat: Optional[float] = Query(None, ge=-90, le=90),
+    q: Optional[str] = Query(None, max_length=MAX_QUERY_CHARS, description="Keyword filter, first 8 words"),
+    from_community: Optional[str] = Query(None, description="Measure distance_km from this community's centre"),
+    lat: Optional[float] = Query(None, ge=-90, le=90, description="...or from this point"),
     lng: Optional[float] = Query(None, ge=-180, le=180),
-    radius_km: Optional[float] = Query(None, gt=0),
+    min_km: Optional[float] = Query(None, ge=0, description="Distance band, needs an origin: d > min_km"),
+    max_km: Optional[float] = Query(None, gt=0, description="Distance band, needs an origin: d <= max_km"),
+    sort: Literal["newest", "nearest", "farthest"] = "newest",
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: DbSession = Depends(get_db),
@@ -122,20 +150,25 @@ def list_listings(
         query = query.filter(Listing.status == status)
     if category:
         query = query.filter(Listing.category.ilike(category))
-    if community:
-        query = query.filter(User.community.ilike(community))
-    if exclude_community:
-        query = query.filter(or_(User.community.is_(None), ~User.community.ilike(exclude_community)))
+    if community_id:
+        query = query.filter(User.community == communities.resolve(db, community_id).name)
+    if exclude_community_id:
+        excluded = communities.resolve(db, exclude_community_id).name
+        query = query.filter(or_(User.community.is_(None), User.community != excluded))
     if owner_id is not None:
         query = query.filter(Listing.owner_id == owner_id)
     if q:
         query = query.filter(*keyword_filter(q))
-
     query = query.order_by(Listing.created_at.desc(), Listing.id.desc())
-    if lat is None or lng is None:
+
+    origin = origin_for(db, from_community, lat, lng)
+    if origin is None:
+        if sort != "newest" or min_km is not None or max_km is not None:
+            raise HTTPException(status_code=422, detail="Distance sort/band needs from_community or lat+lng")
         return [listing_out(l) for l in query.offset(offset).limit(limit).all()]
-    # Distance sort happens in Python, so page after sorting.
-    return apply_distance(query.all(), lat, lng, radius_km)[offset : offset + limit]
+    # Distances are computed in Python, so page after sorting.
+    pairs = with_distances(db, query.all(), origin, min_km, max_km, sort)
+    return [listing_out(l, d) for l, d in pairs[offset : offset + limit]]
 
 
 @router.get("/{listing_id}", response_model=ListingOut)

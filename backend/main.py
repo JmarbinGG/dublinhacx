@@ -1,16 +1,20 @@
 from dotenv import load_dotenv
 
-load_dotenv()  # before anything reads os.getenv (DATABASE_URL, SEARCH_SERVICE_URL, CHAT_SERVICE_URL)
+load_dotenv()  # before anything reads os.getenv (DATABASE_URL, LLM_SERVICE_URL, ...)
+
+import os
 
 from fastapi import FastAPI, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-
 from sqlalchemy import inspect, text
 
 import auth
 from database import Base, engine
-from routers import chat, listings, search, uploads, users
+from routers import assistant, listings, search, uploads, users
 from storage import UPLOAD_DIR
 
 Base.metadata.create_all(bind=engine)
@@ -23,15 +27,34 @@ if "client_id" not in {c["name"] for c in inspect(engine).get_columns("listings"
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_listing_owner_client ON listings (owner_id, client_id)"
         ))
 
+PRODUCTION = os.getenv("APP_ENV") == "production"
+
 app = FastAPI(title="Banyan API", description="Share what you have. Find what you need.")
 
+# CORS: only our frontend. CORS_ORIGINS is a comma-separated list (deployed
+# site, ngrok URL). Outside production the Vite dev server on localhost or a
+# private-LAN address (phones on the same wifi) is allowed too.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=[o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()],
+    allow_origin_regex=None if PRODUCTION else (
+        r"https?://(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+"
+        r"|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?"
+    ),
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "ngrok-skip-browser-warning"],
+    expose_headers=["Retry-After"],
 )
 
+AI_PATHS = ("/api/search/ai", "/api/assistant")
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_errors(request: Request, exc: RequestValidationError):
+    """AI endpoints get a generic message instead of pydantic's details."""
+    if request.url.path.startswith(AI_PATHS):
+        return JSONResponse(status_code=422, content={"detail": "Invalid request"})
+    return await request_validation_exception_handler(request, exc)
 
 
 @app.middleware("http")
@@ -50,7 +73,7 @@ app.include_router(users.router)
 app.include_router(listings.router)
 app.include_router(search.router)
 app.include_router(uploads.router)
-app.include_router(chat.router)
+app.include_router(assistant.router)
 
 
 @app.get("/health")

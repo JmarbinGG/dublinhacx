@@ -4,6 +4,8 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, field_validator
 
 import storage
+from communities import slugify
+from textutil import MAX_QUERY_CHARS
 
 BIO_MAX = 280
 
@@ -37,15 +39,21 @@ class UserSummary(BaseModel):
 
     @computed_field
     @property
+    def community_id(self) -> Optional[str]:
+        """Slug of `community` - the id used by /api/communities and filters."""
+        return slugify(self.community)
+
+    @computed_field
+    @property
     def photo_size_kb(self) -> Optional[int]:
         """KB on disk for our own uploads; None for external URLs."""
         return storage.size_kb(self.photo)
 
 
 class UserPublic(UserSummary):
+    # No coordinates here on purpose: publicly, people are only ever located
+    # by their community's centre (see communities.py).
     bio: Optional[str] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
     contact: Optional[str] = None
     created_at: datetime
 
@@ -54,6 +62,8 @@ class UserPrivate(UserPublic):
     """Only ever returned to the user themselves (/api/auth/me, signup, login)."""
 
     email: str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 
 class UserUpdate(BaseModel):
@@ -159,8 +169,14 @@ class ListingOut(ListingBase):
     created_at: datetime
     updated_at: datetime
     owner: UserSummary
-    # Only set when the request passed lat/lng to sort by distance.
+    # Community centre to community centre, only when the request gave an
+    # origin (from_community or lat/lng).
     distance_km: Optional[float] = None
+
+    @computed_field
+    @property
+    def community_id(self) -> Optional[str]:
+        return self.owner.community_id
 
     @computed_field
     @property
@@ -177,14 +193,95 @@ class ProfileOut(UserPublic):
 
 
 class CommunityOut(BaseModel):
+    id: str  # slug, e.g. "palm-grove"
     name: str
+    lat: Optional[float] = None  # community centre, rounded to ~1 km
+    lng: Optional[float] = None
     members: int
-    listings: int
+    listings: int  # available listings
+
+
+Engine = Literal["ai", "keyword"]
 
 
 class SearchResponse(BaseModel):
     query: str
-    # "ai" when the Go search service answered, "keyword" for the built-in fallback.
-    engine: Literal["ai", "keyword"]
+    # "ai" when the AI search service ranked the results (merged with keyword
+    # hits), "keyword" for the built-in fallback. Same shape either way.
+    engine: Engine
     listings: list[ListingOut]
     users: list[UserPublic]
+    limit: int
+    offset: int
+
+
+# ---------- AI search (one-shot overview) ----------
+
+
+class AISearchFilters(BaseModel):
+    type: Optional[ListingType] = None
+    kind: Optional[ListingKind] = None
+    exchange: Optional[ExchangeType] = None
+    category: Optional[str] = Field(None, max_length=60)
+    max_km: Optional[float] = Field(None, gt=0, le=1000)  # needs community_id
+
+
+class AISearchRequest(BaseModel):
+    q: str = Field(min_length=1, max_length=MAX_QUERY_CHARS)
+    filters: AISearchFilters = AISearchFilters()
+    community_id: Optional[str] = Field(None, max_length=120)
+
+
+class AIPick(BaseModel):
+    id: int
+    why: str
+
+
+class AISearchResponse(BaseModel):
+    query: str
+    summary: str
+    picks: list[AIPick]
+    caveats: list[str]
+    engine: Engine  # "keyword" = the model wasn't used (down, over budget, bad output)
+    ai: bool  # true when the text was written by the AI - label it in the UI
+    listings: list[ListingOut]  # the picked rows, re-read from the DB, in pick order
+
+
+# ---------- AI assistant (multi-turn chat) ----------
+
+
+class AssistantSessionCreate(BaseModel):
+    community_id: Optional[str] = Field(None, max_length=120)
+
+
+class AssistantSessionOut(BaseModel):
+    session_id: str
+    expires_in_s: int  # idle timeout
+    max_turns: int
+    max_message_chars: int
+
+
+class AssistantChatRequest(BaseModel):
+    session_id: str = Field(min_length=1, max_length=64)
+    message: str = Field(min_length=1, max_length=500)
+    community_id: Optional[str] = Field(None, max_length=120)
+
+
+class Chip(BaseModel):
+    code: str  # send back verbatim as the next `message`
+    label: str
+
+
+class AssistantReply(BaseModel):
+    text: str
+    chips: list[Chip]
+    listing_ids: list[int]
+    listings: list[ListingOut]  # the same ids, re-read from the DB
+    engine: Engine
+    ai: bool
+    turns_left: int
+
+
+class AssistantReportRequest(BaseModel):
+    session_id: str = Field(min_length=1, max_length=64)
+    reason: str = Field(min_length=1, max_length=500)
