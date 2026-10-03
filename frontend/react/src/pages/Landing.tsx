@@ -2,7 +2,7 @@ import { Suspense, lazy, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import BanyanTree from '../components/BanyanTree'
 import { Wordmark } from '../components/Navbar'
-import ScrambleHeadline from '../components/ScrambleHeadline'
+import ScrambleText from '../components/ScrambleText'
 import { TREE } from '../generated/art'
 
 // Only fetched when someone taps Get started.
@@ -33,25 +33,30 @@ export default function Landing() {
         <Link to="/app" aria-label="Banyan home">
           <Wordmark draw={drawLogo} />
         </Link>
-        <Link to="/signin">Sign in</Link>
+        <Link to="/signin">
+          <ScrambleText k="signin" />
+        </Link>
       </header>
 
       <main className="landing__body">
         <div className="landing__text">
-          <ScrambleHeadline />
-          <p>
-            A pump set sitting idle, a roll of drip pipe left over, someone who can fix a tractor or stitch a blouse.
-            Banyan helps them reach the neighbour, or the next town over, that needs them.
+          <h1 className="scramble">
+            <ScrambleText k="headline" block />
+          </h1>
+          <p className="scramble">
+            <ScrambleText k="body" block />
           </p>
           <div className="landing__actions">
             <button type="button" className="primary-button" onClick={() => setChoosing(true)}>
-              Get started
+              <ScrambleText k="start" />
             </button>
             <Link to="/signup" className="secondary-button">
-              Join
+              <ScrambleText k="join" />
             </Link>
           </div>
-          <p className="hint">Made for slow connections: text first, photos only when you tap.</p>
+          <p className="hint scramble">
+            <ScrambleText k="hint" block />
+          </p>
         </div>
 
         {/* Decorative: a fixed aspect-ratio box, so the tree never shifts layout. */}
