@@ -88,7 +88,7 @@ def _extract_json(text: str) -> dict:
 
 
 def _body(messages: list[dict], model: str, max_tokens: int) -> dict:
-    body = {"model": model, "messages": messages, "temperature": 0.2, "max_tokens": max_tokens, "stream": False}
+    body = {"model": model, "messages": messages, "temperature": 0, "max_tokens": max_tokens, "stream": False}
     if os.getenv("LLM_JSON_MODE") == "1":
         body["response_format"] = {"type": "json_object"}
     if os.getenv("LLM_THINKING") != "1":

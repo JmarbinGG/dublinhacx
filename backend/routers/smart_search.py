@@ -63,8 +63,8 @@ MAX_LIMIT = 24
 CANDIDATE_CAP = 300
 MAX_TERMS = 8
 SMALL_TIMEOUT_S = 4
-BIG_TIMEOUT_S = 11
-REQUEST_BUDGET_S = 17  # all model calls for one request; the client gives up at 20s
+BIG_TIMEOUT_S = 8
+REQUEST_BUDGET_S = 14  # all model calls for one request; the client gives up at 20s
 NEAR_KM = 25
 CACHE_SIZE = 512
 CACHE_TTL_S = 3600
@@ -478,6 +478,7 @@ def expand_search(db: DbSession, q: str, base: SearchState, models: _ModelBudget
         expand = models.call(messages, _Expand, SMALL_TIMEOUT_S, llm.small_model())
         models.degraded = True  # small model's guess: fine to show, not to cache
     terms = [p for t in _clean_word_list(expand.terms, 6, 40) if (p := stem_phrase(t))] if expand else []
+    terms = list(dict.fromkeys(terms))  # "mechanics" and "mechanic" both stem to one
     if not terms:
         return None
     return base.model_copy(update={"mode": "complex", "terms": terms,
