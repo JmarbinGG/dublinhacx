@@ -616,7 +616,12 @@
   gap: 12px;
   overflow-x: auto;
   scroll-snap-type: x proximity;
-  padding-bottom: 4px;
+  /* overflow-x: auto also clips vertically, so leave room for the 2 px
+     hover lift and the top border (4 px), cancelled by the negative margin
+     so nothing else moves. Don't use overflow-y: visible - with overflow-x
+     auto the browser turns it back into auto. */
+  padding: 4px 0;
+  margin-top: -4px;
 }
 
 .row > .card {
@@ -1075,8 +1080,9 @@ textarea {
   gap: 8px;
   overflow-x: auto;
   list-style: none;
-  margin: 0;
-  padding: 0 0 4px;
+  /* Same clipping as .row: room for the 2 px focus ring + offset. */
+  margin: -4px 0 0;
+  padding: 4px 0;
 }
 
 .person {

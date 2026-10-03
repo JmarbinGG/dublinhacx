@@ -165,7 +165,20 @@ let versionChecked: Promise<void> | null = null
 
 function rememberVersion(v: unknown) {
   if (typeof v !== 'string' || !v || v.length > 64 || v === knownVersion) return
+  const previous = knownVersion
   knownVersion = v
+  // Prune results saved under the old version - they can be wrong now.
+  if (previous) {
+    try {
+      const stale = `banyan.cache.smart:${previous}:`
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i)
+        if (key?.startsWith(stale)) localStorage.removeItem(key)
+      }
+    } catch {
+      // Storage blocked - the version in the key already hides them.
+    }
+  }
   try {
     localStorage.setItem(VERSION_KEY, v)
   } catch {
