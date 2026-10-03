@@ -207,7 +207,8 @@ def stem(word: str) -> str:
 
 
 def stem_phrase(term: str) -> str:
-    return " ".join(stem(w) for w in term.split())
+    """Singular words, minus filler ("someone to repair" -> "repair"). "" if nothing's left."""
+    return " ".join(stem(w) for w in term.split() if w not in FILLER)
 
 
 def looks_simple(q: str) -> bool:
@@ -271,44 +272,69 @@ def apply_changes(state: SearchState, changes: dict) -> SearchState:
 # ---------- models ----------
 
 
+# Models only ever produce search terms. Hard filters (exchange, type,
+# quantity, distance) come from rules - i.e. from words the shopper actually
+# typed - because small models happily invent them ("lend", "material") and
+# a wrong filter silently empties the results.
+
+
+def _str_list(v) -> list:
+    """Accept ["axe"] or [{"name": "axe", ...}] - models do both."""
+    out = []
+    for item in v if isinstance(v, list) else []:
+        if isinstance(item, dict):
+            item = next((x for x in item.values() if isinstance(x, str)), None)
+        if isinstance(item, str):
+            out.append(item)
+    return out
+
+
 class _Route(BaseModel):
     mode: Literal["simple", "complex"]
     terms: list[str] = []
-    attrs: list[str] = []
-    qty: Optional[int] = None
-    type: Optional[ListingType] = None
-    exchange: Optional[ExchangeType] = None
+
+    @field_validator("terms", mode="before")
+    @classmethod
+    def _t(cls, v):
+        return _str_list(v)
 
 
 class _Expand(BaseModel):
     need: str = Field("", max_length=300)
-    terms: list[str] = Field(default=[], max_length=12)
-    type: Optional[ListingType] = None
-    suggestions: list[Suggestion] = Field(default=[], max_length=5)
+    terms: list[str] = []
+
+    @field_validator("terms", mode="before")
+    @classmethod
+    def _t(cls, v):
+        return _str_list(v)[:12]
 
 
 class _Refine(BaseModel):
     terms: Optional[list[str]] = None
     attrs: Optional[list[str]] = None
-    qty: Optional[int] = None
-    type: Optional[ListingType] = None
-    kind: Optional[ListingKind] = None
-    exchange: Optional[ExchangeType] = None
-    max_km: Optional[float] = None
+
+    @field_validator("terms", "attrs", mode="before")
+    @classmethod
+    def _t(cls, v):
+        return None if v is None else _str_list(v)
 
 
 ROUTE_PROMPT = """You sort searches on Banyan, a site where neighbours in rural towns share \
 spare materials, lend tools and equipment, and offer skills or work.
 
 Decide if the search is:
-- "simple": it names the thing wanted ("screws", "pump set", "5 small screws", "tailoring").
-- "complex": it describes a goal or problem and the items must be worked out \
-("things I can use to cut down a tree", "how do I fix a leaking roof").
+- "simple": it names the thing wanted. terms = that thing.
+- "complex": it describes a goal or problem, and the items needed must be worked out. terms = [].
 
-Return JSON: {"mode": "simple"|"complex", "terms": [item names, singular, max 4], \
-"attrs": [size/condition words], "qty": number|null, \
-"type": "material"|"equipment"|"skill"|null, "exchange": "free"|"lend"|"trade"|"paid"|null}
-For complex, terms may be [].
+Examples:
+"screws" -> {"mode": "simple", "terms": ["screw"]}
+"sewing machine for my daughter" -> {"mode": "simple", "terms": ["sewing machine"]}
+"someone to teach english" -> {"mode": "simple", "terms": ["english"]}
+"things i can use to cut down a tree" -> {"mode": "complex", "terms": []}
+"how do i fix a leaking roof" -> {"mode": "complex", "terms": []}
+"need water for my crops" -> {"mode": "complex", "terms": []}
+
+Return only JSON: {"mode": "simple"|"complex", "terms": [...]}
 
 """ + SAFETY_RULES
 
@@ -316,10 +342,9 @@ EXPAND_PROMPT = """You help shoppers on Banyan, a site where neighbours in rural
 spare materials, lend tools and equipment, and offer skills or work.
 
 The shopper described a goal. Work out what they need and what to search for.
-Return JSON: {"need": "<what they're trying to do, under 60 characters>", \
+Return only JSON: {"need": "<what they're trying to do, under 60 characters>", \
 "terms": [up to 6 specific things or skills to search for, most useful first, \
-1-2 words each, singular], "type": "material"|"equipment"|"skill"|null, \
-"suggestions": [up to 2 {"label": "<under 20 chars>", "refine": "<short refinement>"}]}
+1-2 words each, singular]}
 Include both tools and the skill/person who could do it when that makes sense \
 (e.g. cutting down a tree: "axe", "chainsaw", "bow saw", "rope", "tree felling").
 Prefer words that match the categories already on Banyan, given as data below.
@@ -327,12 +352,10 @@ Prefer words that match the categories already on Banyan, given as data below.
 """ + SAFETY_RULES
 
 REFINE_PROMPT = """You update a search on Banyan (neighbours sharing materials, tools and skills).
-You get the current search as JSON and a refinement the shopper typed. Return the new values \
-for the fields the refinement changes, and omit the rest:
-{"terms": [...], "attrs": [...], "qty": number|null, "type": ..., "kind": "offer"|"request"|null, \
-"exchange": "free"|"lend"|"trade"|"paid"|null, "max_km": number|null}
-"terms" are the things searched for, "attrs" are soft preferences (size, material, condition).
-A number on its own is a quantity. To remove something, return the field without it, or null.
+You get the current search terms and preferences as JSON, and a refinement the shopper typed.
+Return only JSON with the updated lists: {"terms": [...], "attrs": [...]}
+"terms" = the things searched for (singular). "attrs" = soft preferences such as material,
+colour, size or condition. Keep existing values unless the refinement replaces or removes them.
 
 """ + SAFETY_RULES
 
@@ -393,64 +416,62 @@ class _ModelBudget:
             return out
         except llm.LLMError as e:
             log.warning("Smart search model call failed: %s", e)
-            self.enabled = False
+            if not e.invalid:  # timeout/network/budget: don't stack more waits
+                self.enabled = False
             return None
 
 
-def new_search(db: DbSession, q: str, models: _ModelBudget) -> tuple[SearchState, list[Suggestion], bool]:
-    """Returns (state, model suggestions, used_model)."""
+def new_search(db: DbSession, q: str, models: _ModelBudget) -> tuple[SearchState, bool]:
+    """Returns (state, used_model)."""
     key = "new:" + " ".join(q.lower().split())
     if (hit := _cached(key)) is not None:
-        return SearchState.model_validate(hit["state"]), [Suggestion(**s) for s in hit["sugg"]], hit["ai"]
+        return SearchState.model_validate(hit), True
 
     changes, leftover = parse_rules(q, initial=True)
     stems = [stem(w) for w in leftover]
     # Simple: the leftover words are one thing ("pump set"). Complex without a
     # model: each meaningful word is searched separately.
     rule_state = apply_changes(SearchState(q=q, terms=[" ".join(stems[:3])] if stems else [q.lower()]), changes)
-    state, suggestions, used = rule_state, [], False
+    word_state = rule_state.model_copy(update={"mode": "complex", "terms": stems[:MAX_TERMS]}) if len(stems) > 1 else rule_state
+    if looks_simple(q):
+        return rule_state, False
 
-    if not looks_simple(q):
-        route = models.call(
-            [{"role": "system", "content": ROUTE_PROMPT}, {"role": "user", "content": fence(q)}],
-            _Route, SMALL_TIMEOUT_S, llm.small_model(),
-        )
-        if route is not None:
-            used = True
-            data = {"q": q, "mode": route.mode, "attrs": route.attrs, "qty": route.qty if route.qty and route.qty > 0 else None,
-                    "type": route.type, "exchange": route.exchange,
-                    "terms": [stem_phrase(t) for t in _clean_word_list(route.terms, 4, 40)]
-                    or (stems[:MAX_TERMS] if route.mode == "complex" else rule_state.terms)}
-            try:
-                state = SearchState.model_validate(data)
-            except ValidationError:  # e.g. qty out of range - ignore the model
-                used, route = False, None
-                state = (rule_state.model_copy(update={"mode": "complex", "terms": stems[:MAX_TERMS]})
-                         if len(stems) > 1 else rule_state)
-            if route is not None and route.mode == "complex":
-                expand = models.call(
-                    [{"role": "system", "content": EXPAND_PROMPT},
-                     {"role": "user", "content": f"Shopper's goal:\n{fence(q)}\n\nCategories on Banyan:\n{fence(_categories(db))}"}],
-                    _Expand, BIG_TIMEOUT_S, llm.big_model(),
-                )
-                if expand is not None and _clean_word_list(expand.terms, 6, 40):
-                    state = state.model_copy(update={
-                        "terms": [stem_phrase(t) for t in SearchState.model_validate({"q": q, "terms": expand.terms}).terms[:6]],
-                        "need": clip(strip_urls(expand.need), 120) or None,
-                        "type": expand.type or state.type,
-                    })
-                    suggestions = expand.suggestions
-                else:
-                    # Big model unavailable: keep the small model's terms, or
-                    # fall back to the meaningful words of the query.
-                    state = state.model_copy(update={"mode": "complex"})
-        elif len(stems) > 1:
-            state = rule_state.model_copy(update={"mode": "complex", "terms": stems[:MAX_TERMS]})
+    # 1. Small model: simple or complex? (If it fails, trust the phrasing.)
+    state, used = word_state, False
+    route = models.call(
+        [{"role": "system", "content": ROUTE_PROMPT}, {"role": "user", "content": fence(q)}],
+        _Route, SMALL_TIMEOUT_S, llm.small_model(),
+    )
+    if route is not None:
+        used = True
+        if route.mode == "simple":
+            terms = [p for t in _clean_word_list(route.terms, 4, 40) if (p := stem_phrase(t))] or rule_state.terms
+            state = rule_state.model_copy(update={"terms": terms})
+    complex_ = route.mode == "complex" if route is not None else len(stems) > 1
 
-    suggestions = _clean_suggestions(suggestions)
+    # 2. Big model: what does a complex search actually need?
+    if complex_:
+        expanded = expand_search(db, q, word_state, models)
+        state = expanded or word_state  # big model unavailable: search the meaningful words
+        used = used or expanded is not None
+
     if used:
-        _store(key, {"state": state.model_dump(), "sugg": [s.model_dump() for s in suggestions], "ai": True})
-    return state, suggestions, used
+        _store(key, state.model_dump())
+    return state, used
+
+
+def expand_search(db: DbSession, q: str, base: SearchState, models: _ModelBudget) -> Optional[SearchState]:
+    """Ask the big model what a goal needs. None if it couldn't help."""
+    expand = models.call(
+        [{"role": "system", "content": EXPAND_PROMPT},
+         {"role": "user", "content": f"Shopper's goal:\n{fence(q)}\n\nCategories on Banyan:\n{fence(_categories(db))}"}],
+        _Expand, BIG_TIMEOUT_S, llm.big_model(),
+    )
+    terms = [p for t in _clean_word_list(expand.terms, 6, 40) if (p := stem_phrase(t))] if expand else []
+    if not terms:
+        return None
+    return base.model_copy(update={"mode": "complex", "terms": terms,
+                                   "need": clip(strip_urls(expand.need), 120) or None})
 
 
 def refine_search(state: SearchState, text: str, models: _ModelBudget) -> tuple[SearchState, bool]:
@@ -464,22 +485,20 @@ def refine_search(state: SearchState, text: str, models: _ModelBudget) -> tuple[
     if (hit := _cached(key)) is not None:
         return apply_changes(base, hit), True
 
-    current = state.model_dump(exclude={"q", "refinements", "need", "mode"})
+    current = {"terms": state.terms, "attrs": state.attrs}
     out = models.call(
         [{"role": "system", "content": REFINE_PROMPT},
          {"role": "user", "content": f"Current search:\n{fence(current)}\n\nRefinement:\n{fence(text)}"}],
         _Refine, SMALL_TIMEOUT_S, llm.small_model(),
     )
-    if out is None:
-        # No model: unknown words become soft preferences.
+    if out is None or (not out.terms and not out.attrs):
+        # No model, or nothing usable from it: unknown words become soft preferences.
         changes["add_attrs"] = changes.get("add_attrs", []) + leftover
         return apply_changes(base, changes), False
 
-    model_changes = {k: v for k, v in out.model_dump(exclude_unset=True).items()}
-    if "qty" in model_changes and (model_changes["qty"] or 0) <= 0:
-        model_changes["qty"] = None
+    model_changes = {k: v for k, v in out.model_dump(exclude_unset=True).items() if v is not None}
     if "terms" in model_changes:
-        model_changes["terms"] = [stem_phrase(t) for t in _clean_word_list(model_changes["terms"], MAX_TERMS, 40)] or state.terms
+        model_changes["terms"] = [p for t in _clean_word_list(model_changes["terms"], MAX_TERMS, 40) if (p := stem_phrase(t))] or state.terms
     model_changes.update({k: v for k, v in changes.items() if k != "add_attrs"})  # rules win on what they parsed
     if changes.get("add_attrs"):
         model_changes["attrs"] = list(dict.fromkeys((model_changes.get("attrs") or state.attrs) + changes["add_attrs"]))
@@ -528,19 +547,29 @@ def run_state(
         title, tags = (l.title or "").lower(), (l.tags or "").lower()
         rest = f"{l.category or ''} {l.description or ''} {l.owner.community or ''}".lower()
         hay = f"{title} {tags} {rest}"
-        score, match = 0.0, None
+        score, match, full, others = 0.0, None, False, 0.0
         for term, ws in zip(terms, term_words):
             # Every word of the term found = full score; some = partial.
             s = sum(3 if w in title else 2 if w in tags else 1 if w in rest else 0 for w in ws) / len(ws)
-            if s > score:
-                score, match = s, term
+            is_full = all(w in hay for w in ws)
+            others += s
+            if (is_full, s) > (full, score):
+                score, match, full = s, term, is_full
         if score == 0:
             continue
+        if state.mode == "simple":
+            # "tractor" + "repair": a listing with both beats one with either.
+            score += 0.5 * (others - score)
         score += sum(0.5 for a in state.attrs if a in hay)
         if state.qty:
             have = _listing_qty(l.quantity)
             score += 1 if have is not None and have >= state.qty else -1.5 if have is not None else 0
-        scored.append((score, l, match))
+        scored.append((score, l, match, full))
+
+    # Partial matches ("set" from "pump set") only when nothing matches fully.
+    if any(f for *_, f in scored):
+        scored = [x for x in scored if x[3]]
+    scored = [(s, l, m) for s, l, m, _ in scored]
 
     pairs = with_distances(db, [l for _, l, _ in scored], origin, None, state.max_km if origin else None)
     dist = {l.id: d for l, d in pairs}
@@ -582,8 +611,8 @@ def _clean_suggestions(items) -> list[Suggestion]:
     return out[:3]
 
 
-def _suggestions(state: SearchState, origin: Optional[Community], extra: list[Suggestion], empty: bool) -> list[Suggestion]:
-    out = list(extra)
+def _suggestions(state: SearchState, origin: Optional[Community], empty: bool) -> list[Suggestion]:
+    out: list[Suggestion] = []
     if empty and state.exchange:
         out.append(Suggestion(label="Any exchange", refine="any price"))
     if empty and state.max_km:
@@ -592,7 +621,9 @@ def _suggestions(state: SearchState, origin: Optional[Community], extra: list[Su
         out.append(Suggestion(label="Free only", refine="free"))
     if origin and not state.max_km:
         out.append(Suggestion(label=f"Within {NEAR_KM} km", refine=f"within {NEAR_KM} km"))
-    if state.type is None and state.mode == "simple":
+    if state.mode == "complex" and len(state.terms) > 1 and not empty:
+        out = [Suggestion(label=f"Only {t}", refine=f"only {t}") for t in state.terms[:2]] + out
+    elif state.type is None and state.mode == "simple":
         out.append(Suggestion(label="Tools only", refine="tools"))
     return _clean_suggestions(out)
 
@@ -610,9 +641,8 @@ def smart_search(
         origin = communities.resolve_any(db, name=user.community)
 
     models = _ModelBudget(request, user)
-    extra: list[Suggestion] = []
     if body.state is None:
-        state, extra, used = new_search(db, " ".join(body.q.split()), models)
+        state, used = new_search(db, " ".join(body.q.split()), models)
     elif body.refine and body.refine.strip():
         state, used = refine_search(body.state, body.refine, models)
     else:
@@ -621,12 +651,21 @@ def smart_search(
     if state.max_km is not None and origin is None:
         state = state.model_copy(update={"max_km": None})  # nothing to measure from
     cards, has_more = run_state(db, state, origin, body.limit, body.offset)
+
+    # The small model called it simple but nothing matched (e.g. "start a
+    # vegetable garden"): let the big model work out what's needed.
+    if not cards and body.state is None and used and state.mode == "simple" and not looks_simple(state.q):
+        expanded = expand_search(db, state.q, state, models)
+        if expanded is not None:
+            state = expanded
+            _store("new:" + " ".join(state.q.lower().split()), state.model_dump())
+            cards, has_more = run_state(db, state, origin, body.limit, body.offset)
     return SmartSearchResponse(
         mode=state.mode,
         engine="ai" if used else "keyword",
         ai=used,
         state=state,
-        suggestions=_suggestions(state, origin, extra, not cards),
+        suggestions=_suggestions(state, origin, not cards),
         results=cards,
         has_more=has_more,
     )

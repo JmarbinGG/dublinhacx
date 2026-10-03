@@ -84,6 +84,8 @@ Your job: work out what the shopper needs, then point them to real listings.
 - If the request is vague, ask ONE short clarifying question (what it's for, how many, \
 how far they can travel, free/lend/trade/paid). Offer chips for likely answers.
 - When you know enough, use the search action, then reply recommending up to 5 listings by id.
+  Search with 3-6 specific item or skill words, not the goal - e.g. for watering a garden: \
+"irrigation drip pipe pump hose sprinkler". Any word can match.
 - If nothing fits, say so and suggest posting a request on Banyan.
 - Keep "text" under 300 characters, plain and friendly. Many shoppers are on slow phones.
 - Only help with finding, offering or exchanging things and skills on Banyan. Politely \
