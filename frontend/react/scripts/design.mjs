@@ -148,28 +148,126 @@ function springLinear(zeta = 0.8, omega = 14, samples = 18, settle = 0.55) {
   return `linear(${pts.join(', ')})`
 }
 
-// ---------- 3. aerial roots art ----------
+// ---------- 3. the banyan tree (landing page) ----------
 
-// Each root hangs from the canopy line: x(y) = x0 + A·(y/H)·sin(f·y + φ).
-// Amplitude grows with length, like real aerial roots swaying.
-function rootsPath(width = 400, height = 120) {
-  const roots = [
-    [24, 70, 4, 0.09, 0.2], [58, 110, 6, 0.07, 1.4], [97, 88, 5, 0.1, 2.1],
-    [140, 116, 7, 0.06, 0.6], [186, 76, 4, 0.11, 2.9], [228, 104, 6, 0.08, 1.1],
-    [271, 92, 5, 0.09, 0.3], [312, 118, 7, 0.065, 2.4], [352, 80, 4, 0.1, 1.7], [384, 100, 5, 0.08, 0.9],
-  ]
-  const d = roots.map(([x0, len, amp, f, phase]) => {
-    const steps = 8
-    const pts = []
-    for (let i = 0; i <= steps; i++) {
-      const y = (i / steps) * Math.min(len, height)
-      const x = x0 + amp * (y / height) * Math.sin(f * y + phase)
-      pts.push(`${Math.round(x * 10) / 10} ${Math.round(y * 10) / 10}`)
+// Seeded PRNG (mulberry32): the same seed always builds the same tree.
+function rng(seed) {
+  return () => {
+    seed |= 0
+    seed = (seed + 0x6d2b79f5) | 0
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+// 2D rotation: [x', y'] = [[cos -sin], [sin cos]] . [x, y]
+const rotate = ([x, y], a) => [x * Math.cos(a) - y * Math.sin(a), x * Math.sin(a) + y * Math.cos(a)]
+const r1 = (n) => Math.round(n * 10) / 10
+
+/**
+ * Recursive banyan: wide, low limbs that keep splitting; leaf clusters on
+ * the tips; aerial roots dropping from the wide limbs to the ground.
+ * Every path gets a start time (ms) and duration baked in, so the browser
+ * just plays them: trunk 0-1.2 s, limbs 1.2-3 s by depth, leaves 3-4.2 s
+ * by distance from the trunk, roots 4.2-6 s.
+ *
+ * Output rows: [kind, d, width, start, duration]
+ *   kind 0 = wood (stroke), 1 = leaf cluster (circle "cx cy r"),
+ *   2 = aerial root (stroke; thickens into a pillar via a transform once
+ *       it reaches the ground)
+ */
+function banyan(seed = 7) {
+  const rand = rng(seed)
+  const GROUND = 240
+  const out = []
+  const limbs = [] // [x0, y0, cx, cy, x1, y1, depth] for root drops
+  const tips = []
+
+  // Trunk: three stacked segments, each thinner - the taper.
+  const base = [200, GROUND]
+  const top = [200, 150]
+  const seg = [[GROUND, 205, 12], [205, 175, 9.5], [175, 150, 7.5]]
+  seg.forEach(([y0, y1, w], i) => out.push([0, `M200 ${y0}Q${r1(199 + rand() * 2)} ${r1((y0 + y1) / 2)} 200 ${y1}`, w, i * 400, 400]))
+
+  // Branch: direction vector `dir`, rotated per child, length shrinks by
+  // a factor each level; width shrinks with depth.
+  function branch(from, dir, len, width, depth, order) {
+    const to = [from[0] + dir[0] * len, from[1] + dir[1] * len]
+    // Quadratic control point: halfway along, pushed sideways a little
+    // (the perpendicular [-dy, dx]) for an organic bend.
+    const bend = (rand() - 0.5) * len * 0.35
+    const c = [from[0] + (dir[0] * len) / 2 - dir[1] * bend, from[1] + (dir[1] * len) / 2 + dir[0] * bend - len * 0.06]
+    const start = 1200 + (depth - 1) * 600 + order * 20
+    out.push([0, `M${r1(from[0])} ${r1(from[1])}Q${r1(c[0])} ${r1(c[1])} ${r1(to[0])} ${r1(to[1])}`, r1(width), start, 600])
+    if (depth <= 2) limbs.push([...from, ...c, ...to, depth])
+    if (depth === 3) {
+      tips.push(to)
+      return
     }
-    return `M${pts[0]}L${pts.slice(1).join(' ')}`
+    const kids = 2
+    for (let k = 0; k < kids; k++) {
+      // Banyans spread wide: children fan sideways and slightly up.
+      const spread = (k - (kids - 1) / 2) * (0.55 + rand() * 0.35)
+      let d = rotate(dir, spread + (rand() - 0.5) * 0.25)
+      // Pull deep branches toward horizontal (a broad, flat canopy).
+      if (depth >= 2) d = [d[0], d[1] * 0.75 - 0.05]
+      const n = Math.hypot(d[0], d[1])
+      branch(to, [d[0] / n, d[1] / n], len * (0.72 + rand() * 0.12), width * 0.62, depth + 1, order * 2 + k)
+    }
+  }
+
+  // Four main limbs: two low and wide, two higher.
+  const mains = [[-1.32, 82], [-0.62, 66], [0.62, 66], [1.32, 82]]
+  mains.forEach(([angle, len], i) => branch(top, rotate([0, -1], angle), len, 6, 1, i))
+
+  // Leaf clusters on every tip; delay grows with distance from the trunk.
+  const maxD = Math.max(...tips.map(([x, y]) => Math.hypot(x - 200, y - 150)))
+  for (const [x, y] of tips) {
+    const dist = Math.hypot(x - 200, y - 150)
+    out.push([1, `${r1(x)} ${r1(y)} ${r1(18 + rand() * 9)}`, 0, Math.round(3000 + (dist / maxD) * 900), 300])
+  }
+
+  // Aerial roots: from points along the wide limbs, falling to the ground.
+  // A small sway decays toward the ground and a gravity pull bends the
+  // curve's control points downward - the same idea as the old roots strip.
+  const drops = limbs
+    .filter(([x0, , , , x1, , depth]) => depth === 2 || Math.abs(x1 - x0) > 40)
+    .map(([x0, y0, cx, cy, x1, y1]) => {
+      const t = 0.55 + rand() * 0.35 // point on the quadratic B(t)
+      const u = 1 - t
+      return [u * u * x0 + 2 * u * t * cx + t * t * x1, u * u * y0 + 2 * u * t * cy + t * t * y1]
+    })
+    .filter(([x]) => Math.abs(x - 200) > 30)
+    .sort((a, b) => Math.abs(a[0] - 200) - Math.abs(b[0] - 200))
+    .slice(0, 8)
+  drops.forEach(([x, y], i) => {
+    const fall = GROUND - y
+    const sway = (rand() - 0.5) * 10
+    const d = `M${r1(x)} ${r1(y)}C${r1(x + sway)} ${r1(y + fall * 0.35)} ${r1(x - sway * 0.5)} ${r1(y + fall * 0.75)} ${r1(x + sway * 0.2)} ${GROUND}`
+    out.push([2, d, 1.3, 4200 + i * 90, 900])
   })
-  // Canopy: one gentle quadratic arc across the top.
-  return { d: `M0 2Q${width / 2} -6 ${width} 2${d.join('')}`, width, height }
+
+  // Ground line.
+  out.push([0, `M60 ${GROUND}H340`, 1, 0, 600])
+
+  // Tight viewBox from every coordinate (+ leaf radii), so the reserved
+  // aspect-ratio box holds the whole tree and nothing spills onto text.
+  let [minX, minY, maxX, maxY] = [Infinity, Infinity, -Infinity, -Infinity]
+  for (const [kind, d] of out) {
+    const nums = d.match(/-?\d+(\.\d+)?/g).map(Number)
+    const pad = kind === 1 ? nums[2] : 6
+    const pts = kind === 1 ? [[nums[0], nums[1]]] : nums.reduce((acc, n, i) => (i % 2 ? acc[acc.length - 1].push(n) : acc.push([n]), acc), [])
+    for (const [x, y] of pts) {
+      if (y === undefined) continue
+      minX = Math.min(minX, x - pad)
+      maxX = Math.max(maxX, x + pad)
+      minY = Math.min(minY, y - pad)
+      maxY = Math.max(maxY, y + pad)
+    }
+  }
+  const vb = [Math.floor(minX), Math.floor(minY), Math.ceil(maxX - minX), Math.ceil(maxY - minY)]
+  return { vb, rows: out }
 }
 
 // ---------- 4. icon morphs ----------
@@ -280,7 +378,7 @@ ${block(hex.dark).replace(/^/gm, '  ')}
 `
 writeFileSync(join(outDir, 'tokens.css'), css)
 
-const art = rootsPath()
+const tree = banyan()
 const morphs = buildMorphs()
 writeFileSync(
   join(outDir, 'morphs.ts'),
@@ -290,7 +388,9 @@ writeFileSync(
 )
 writeFileSync(
   join(outDir, 'art.ts'),
-  `// GENERATED by scripts/design.mjs - edit the script, not this file.\nexport const ROOTS = ${JSON.stringify(art)} as const\n`,
+  `// GENERATED by scripts/design.mjs - the landing page banyan, baked.\n` +
+    `// rows: [kind 0 wood | 1 leaf "cx cy r" | 2 root | 3 pillar, d, width, start ms, duration ms]\n` +
+    `export const TREE = ${JSON.stringify(tree)} as { vb: [number, number, number, number]; rows: [number, string, number, number, number][] }\n`,
 )
 
-console.log(`design: ${Object.keys(hex.light).length} tokens x 2 modes, ${CHECKS.length * 2} contrast checks passed, roots path ${art.d.length} B, ${Object.keys(morphs).length} icon morphs`)
+console.log(`design: ${Object.keys(hex.light).length} tokens x 2 modes, ${CHECKS.length * 2} contrast checks passed, banyan ${tree.rows.length} paths, ${Object.keys(morphs).length} icon morphs`)

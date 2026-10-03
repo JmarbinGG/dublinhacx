@@ -1637,8 +1637,11 @@ textarea {
 }
 
 .landing__body {
-  max-width: 34rem;
-  padding: 12vh 0 48px;
+  display: grid;
+  grid-template-columns: minmax(0, 34rem) minmax(0, 1fr);
+  align-items: center;
+  gap: 32px;
+  padding: 10vh 0 48px;
 }
 
 .landing__body h1 {
@@ -1646,7 +1649,7 @@ textarea {
   margin-bottom: 16px;
 }
 
-.landing__body > p:first-of-type {
+.landing__text > p:first-of-type {
   font-size: 1.1rem;
   color: var(--muted);
 }
@@ -1658,14 +1661,58 @@ textarea {
   margin: 24px 0 12px;
 }
 
-.landing__roots {
+/* Fixed aspect ratio (the tree's viewBox) - space is reserved before the
+   SVG paints, so there is no layout shift. pointer-events off: it never
+   blocks a button or text. */
+.landing__tree {
+  /* aspect-ratio is set inline from the generated viewBox. */
   width: 100%;
-  height: 120px;
-  margin-top: auto;
+  pointer-events: none;
+}
+
+.tree {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.tree__wood,
+.tree__root {
   fill: none;
-  stroke: var(--line-strong);
-  stroke-width: 1;
-  vector-effect: non-scaling-stroke;
+  stroke: var(--muted);
+  /* Butt caps: a not-yet-drawn path (zero-length dash) shows nothing,
+     where round caps would leave a dot. */
+  stroke-linecap: butt;
+  /* pathLength=1: dash 1 = the whole path; offset 1 hides it, 0 draws it. */
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+
+.tree__root {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* Pillars: roots end up thicker (the static picture shows the final state). */
+.tree--static .tree__root {
+  transform: scaleX(2.4);
+}
+
+.tree__leaf {
+  fill: var(--accent);
+  opacity: 0.5;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* Until the timeline starts (right after first paint) show nothing. */
+.tree--pending .tree__wood,
+.tree--pending .tree__root {
+  stroke-dashoffset: 1;
+}
+
+.tree--pending .tree__leaf {
+  opacity: 0;
 }
 
 /* ---------- footer ---------- */
@@ -1725,8 +1772,13 @@ textarea {
   }
 
   .auth-layout,
-  .form-row {
+  .form-row,
+  .landing__body {
     grid-template-columns: 1fr;
+  }
+
+  .landing__body {
+    padding-top: 6vh;
   }
 
   .auth-layout {
