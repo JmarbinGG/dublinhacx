@@ -1762,6 +1762,79 @@ textarea {
   opacity: 0;
 }
 
+/* ---------- landing headline scramble ---------- */
+
+/* Same text style in every language. A slightly taller line height than
+   the other headings so Devanagari marks above/below the line never touch
+   the next line (system fonts: Noto / Kohinoor / Nirmala, no web font). */
+.scramble {
+  line-height: 1.32;
+}
+
+/* All versions occupy one grid cell: the cell is as tall as the tallest
+   (Spanish, or Hindi with its taller glyphs) at every width - so swapping
+   languages can never shift the layout. */
+.scramble__stack {
+  display: grid;
+}
+
+.scramble__stack > * {
+  grid-area: 1 / 1;
+}
+
+.scramble__sizer {
+  visibility: hidden;
+}
+
+/* ---------- language sheet ---------- */
+
+.lang-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lang-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px; /* comfortable thumb target */
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.lang-option:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.lang-option input {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.lang-option__native {
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.lang-option__english {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.lang-sheet__go {
+  min-height: 48px;
+  width: 100%;
+}
+
 /* ---------- footer ---------- */
 
 .footer {
@@ -1826,6 +1899,16 @@ textarea {
 
   .landing__body {
     padding-top: 6vh;
+  }
+
+  /* Phones: full-width, thumb-height actions. */
+  .landing__actions > * {
+    flex: 1 1 140px;
+    min-height: 48px;
+  }
+
+  .lang-sheet {
+    padding-bottom: max(24px, env(safe-area-inset-bottom));
   }
 
   .auth-layout {

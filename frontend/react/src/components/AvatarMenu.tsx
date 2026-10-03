@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { formatKb, useDataBudget } from '../context/DataBudgetContext'
+import { LANGS, readLang, saveLang, type LangId } from '../lib/lang'
 import { applyTheme, readTheme, type ThemeChoice } from '../lib/theme'
 import Avatar from './Avatar'
 import Icon from './Icon'
@@ -20,6 +21,7 @@ export default function AvatarMenu() {
   const { usedKb, budgetKb } = useDataBudget()
   const [open, setOpen] = useState(false)
   const [theme, setTheme] = useState<ThemeChoice>(readTheme)
+  const [lang, setLang] = useState<LangId>(() => readLang() ?? 'en')
   const ref = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
 
@@ -105,6 +107,24 @@ export default function AvatarMenu() {
                 }}
               >
                 {t.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="menu__theme" role="group" aria-label="Language">
+            {LANGS.map((l) => (
+              <button
+                key={l.id}
+                type="button"
+                className="seg"
+                lang={l.id}
+                aria-pressed={lang === l.id}
+                onClick={() => {
+                  setLang(l.id)
+                  saveLang(l.id)
+                }}
+              >
+                {l.native}
               </button>
             ))}
           </div>
