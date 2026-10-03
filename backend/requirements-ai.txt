@@ -1,5 +1,0 @@
-# Only needed when AI_BACKEND=clip (see ai/factory.py). Not installed by
-# default because torch is a multi-GB download.
-torch
-transformers
-pillow
