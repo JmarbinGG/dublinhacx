@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 
 /**
  * Data-saver settings and meter. Tracks KB of listing photos the user chose
@@ -12,14 +12,22 @@ export const BUDGET_CHOICES_MB = [5, 10, 25, 50, 100]
 /** A compact AI answer is roughly this big over the wire. */
 export const AI_ANSWER_KB = 2
 
-type Stored = { month: string; usedKb: number; aiKb: number; budgetMb: number; aiAnswers: boolean }
+type Stored = {
+  month: string
+  usedKb: number
+  aiKb: number
+  budgetMb: number
+  aiAnswers: boolean
+  /** Data saver mode: no animation, no photo size checks. */
+  saver: boolean
+}
 
 function currentMonth() {
   return new Date().toISOString().slice(0, 7) // "2026-10"
 }
 
 function readStored(): Stored {
-  const fresh: Stored = { month: currentMonth(), usedKb: 0, aiKb: 0, budgetMb: DEFAULT_BUDGET_MB, aiAnswers: true }
+  const fresh: Stored = { month: currentMonth(), usedKb: 0, aiKb: 0, budgetMb: DEFAULT_BUDGET_MB, aiAnswers: true, saver: false }
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return fresh
@@ -46,6 +54,8 @@ type DataBudgetValue = {
   budgetMb: number
   /** Whether "Ask AI" overviews and the assistant are switched on. */
   aiAnswers: boolean
+  saver: boolean
+  setSaver: (on: boolean) => void
   setBudgetMb: (mb: number) => void
   setAiAnswers: (on: boolean) => void
   resetUsage: () => void
@@ -62,6 +72,12 @@ export function DataBudgetProvider({ children }: { children: React.ReactNode }) 
   const [stored, setStored] = useState<Stored>(() => readStored())
   const [loaded, setLoaded] = useState<Set<string>>(() => new Set())
 
+  // Data saver turns all animation off (CSS keys off html[data-motion]).
+  useEffect(() => {
+    if (stored.saver) document.documentElement.dataset.motion = 'off'
+    else delete document.documentElement.dataset.motion
+  }, [stored.saver])
+
   function update(next: Stored) {
     setStored(next)
     writeStored(next)
@@ -74,6 +90,8 @@ export function DataBudgetProvider({ children }: { children: React.ReactNode }) 
       budgetMb: stored.budgetMb,
       budgetKb: stored.budgetMb * 1024,
       aiAnswers: stored.aiAnswers,
+      saver: stored.saver,
+      setSaver: (on) => update({ ...stored, saver: on }),
       setBudgetMb: (mb) => update({ ...stored, budgetMb: mb }),
       setAiAnswers: (on) => update({ ...stored, aiAnswers: on }),
       resetUsage: () => update({ ...stored, usedKb: 0, aiKb: 0 }),

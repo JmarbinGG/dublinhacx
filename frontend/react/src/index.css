@@ -1,82 +1,126 @@
+/*
+ * Base. Colours come from src/generated/tokens.css (built by
+ * scripts/design.mjs, contrast-checked). System fonts only - no font
+ * download. One radius everywhere except avatars, which are round.
+ */
 :root {
-  /* Earthy, high-contrast and readable outdoors in sunlight: stone neutrals
-     with a deep emerald accent (Tailwind's stone/emerald scales). System
-     fonts only - no web-font download on a metered connection. */
-  --bg: #fafaf9; /* stone-50 */
-  --surface: #ffffff;
-  --surface-alt: #f5f5f4; /* stone-100 */
-
-  --border: #e7e5e4; /* stone-200 */
-  --border-strong: #d6d3d1; /* stone-300 */
-
-  --text: #1c1917; /* stone-900 */
-  --text-muted: #57534e; /* stone-600 */
-  --text-subtle: #78716c; /* stone-500 */
-
-  --accent: #065f46; /* emerald-800 */
-  --accent-hover: #064e3b; /* emerald-900 */
-  --accent-tint: #ecfdf5; /* emerald-50 */
-  --accent-soft: #d1fae5; /* emerald-100 */
-
-  --warn: #92400e; /* amber-800 */
-  --warn-tint: #fffbeb; /* amber-50 */
-
-  --danger: #b91c1c; /* red-700 */
-  --danger-tint: #fef2f2; /* red-50 */
-
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-
-  --shadow-card: 0 1px 2px rgba(28, 25, 23, 0.05), 0 4px 12px rgba(28, 25, 23, 0.06);
-  --shadow-card-hover: 0 2px 6px rgba(28, 25, 23, 0.06), 0 10px 24px rgba(28, 25, 23, 0.09);
-
+  --radius: 6px;
+  --font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', 'Helvetica Neue', Arial, sans-serif;
   --font-display: ui-serif, Georgia, 'Times New Roman', serif;
-  --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-
-  font-family: var(--font-body);
+  --space: 16px;
+  font-family: var(--font);
+  font-size: 100%;
+  line-height: 1.55;
   color: var(--text);
   background: var(--bg);
+  -webkit-text-size-adjust: 100%;
 }
 
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  line-height: 1.5;
   min-height: 100vh;
-  background-color: var(--bg);
-}
-
-img {
-  max-width: 100%;
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
+  background: var(--bg);
 }
 
 h1,
 h2,
 h3 {
-  line-height: 1.2;
+  line-height: 1.25;
   margin: 0 0 0.5rem;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+}
+
+h1 {
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  font-weight: 600;
+}
+
+h2 {
+  font-size: 1.15rem;
+}
+
+h3 {
+  font-size: 1rem;
+}
+
+p {
+  margin: 0 0 0.75rem;
+}
+
+a {
+  color: var(--accent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+img,
+svg {
+  max-width: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
 }
 
 button {
-  font: inherit;
   cursor: pointer;
 }
 
 button:disabled {
   cursor: not-allowed;
-  opacity: 0.5;
+  opacity: 0.55;
 }
 
 :focus-visible {
-  outline: 3px solid var(--accent);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+.icon {
+  width: 1.1em;
+  height: 1.1em;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vertical-align: -0.18em;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.skip-link {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  transform: translateY(-200%);
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  z-index: 50;
+}
+
+.skip-link:focus {
+  transform: none;
 }

@@ -57,6 +57,18 @@ const IMAGE_HOSTS = new Set([
   'api.dicebear.com',
 ])
 
+// Hosts that answer a cross-origin HEAD request, so we can show a photo's
+// size before loading it. (commons.wikimedia.org redirects without CORS.)
+const SIZE_CHECK_HOSTS = new Set([new URL(API_BASE_URL).host, 'images.unsplash.com', 'upload.wikimedia.org', 'api.dicebear.com'])
+
+export function canCheckSize(url: string): boolean {
+  try {
+    return SIZE_CHECK_HOSTS.has(new URL(url).host)
+  } catch {
+    return false
+  }
+}
+
 /** Uploaded photos come back API-relative ("/uploads/abc.jpg"). Returns
  * null for anything that isn't http(s) on an allowed host. */
 export function resolveImageUrl(path: string | null | undefined): string | null {

@@ -1,21 +1,25 @@
+import { lazy } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from './auth/AuthContext'
 import AppLayout from './components/AppLayout'
-import About from './pages/About'
-import Communities from './pages/Communities'
-import CommunityPage from './pages/CommunityPage'
-import CreateListing from './pages/CreateListing'
-import DataSaver from './pages/DataSaver'
-import EditProfile from './pages/EditProfile'
 import Home from './pages/Home'
 import Landing from './pages/Landing'
-import ListingDetail from './pages/ListingDetail'
-import NotFound from './pages/NotFound'
-import Profile from './pages/Profile'
-import SearchResults from './pages/SearchResults'
-import SignIn from './pages/SignIn'
-import SignUp from './pages/SignUp'
-import './App.css'
+
+// Home and the landing page ship in the first load; every other route is
+// its own chunk, fetched the first time it's visited (then cached by the
+// service worker).
+const About = lazy(() => import('./pages/About'))
+const Communities = lazy(() => import('./pages/Communities'))
+const CommunityPage = lazy(() => import('./pages/CommunityPage'))
+const CreateListing = lazy(() => import('./pages/CreateListing'))
+const DataSaver = lazy(() => import('./pages/DataSaver'))
+const EditProfile = lazy(() => import('./pages/EditProfile'))
+const ListingDetail = lazy(() => import('./pages/ListingDetail'))
+const NotFound = lazy(() => import('./pages/NotFound'))
+const Profile = lazy(() => import('./pages/Profile'))
+const SearchResults = lazy(() => import('./pages/SearchResults'))
+const SignIn = lazy(() => import('./pages/SignIn'))
+const SignUp = lazy(() => import('./pages/SignUp'))
 
 /** Old "My Listings" links now go to your own profile. */
 function MyListingsRedirect() {

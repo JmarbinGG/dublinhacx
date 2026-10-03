@@ -12,11 +12,11 @@ export default function CommunityPage() {
   const people = useUsers({ community: name, limit: 50 })
 
   return (
-    <section className="feed">
+    <section className="stack">
       <Link to="/communities" className="back">
         &larr; All towns
       </Link>
-      <div className="section-heading">
+      <div className="section-head">
         <h1>{name}</h1>
         {home !== name && (
           <button type="button" className="secondary-button" onClick={() => setHome(name)}>
@@ -26,9 +26,9 @@ export default function CommunityPage() {
       </div>
 
       {people.data && people.data.length > 0 && (
-        <div className="people-strip" aria-label="People">
+        <div className="people" aria-label="People">
           {people.data.map((person) => (
-            <Link key={person.id} to={`/users/${person.id}`} className="person-chip">
+            <Link key={person.id} to={`/users/${person.id}`} className="person">
               <Avatar name={person.name} size="sm" />
               <span>
                 <strong>{person.name}</strong>
@@ -38,7 +38,7 @@ export default function CommunityPage() {
         </div>
       )}
 
-      <h2 className="results-heading">
+      <h2 className="results-title">
         Shared in {name}
         {listings.data && <span className="count">{listings.data.length}</span>}
       </h2>

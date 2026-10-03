@@ -88,12 +88,10 @@ export default function ListingDetail() {
     <section className="detail">
       {backButton}
 
-      <div className="market-card__badges">
-        <span className={`badge badge--${listing.type}`}>{typeLabel(listing.type)}</span>
-        <span className={`badge badge--kind-${listing.kind}`}>{kindLabel(listing)}</span>
-        <span className={`distance-badge distance-badge--${distance.tone}`}>{distance.text}</span>
-        {listing.status !== 'available' && <span className="badge badge--status">{listing.status}</span>}
-      </div>
+      <p className="eyebrow">
+        {typeLabel(listing.type)} · {kindLabel(listing)} · {distance.text}
+        {listing.status !== 'available' && ` · ${listing.status}`}
+      </p>
       <h1>{listing.title}</h1>
       {listing.description && <p className="detail-desc">{listing.description}</p>}
 
@@ -120,7 +118,7 @@ export default function ListingDetail() {
           <strong>{listing.owner.name}</strong>
           {listing.owner.community && <span className="owner-row__town">{listing.owner.community}</span>}
         </span>
-        <span className="owner-row__more">View profile &rarr;</span>
+        <span className="owner-row__more">Profile</span>
       </Link>
 
       {isMine ? (
@@ -128,7 +126,7 @@ export default function ListingDetail() {
           <Link to={`/listings/${listing.id}/edit`} className="secondary-button">
             Edit
           </Link>
-          <label className="filter-select">
+          <label className="field">
             <span>Status</span>
             <select value={listing.status} disabled={busy} onChange={(e) => setStatus(e.target.value as ListingStatus)}>
               {STATUSES.map((status) => (

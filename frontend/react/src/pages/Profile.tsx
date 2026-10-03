@@ -70,14 +70,14 @@ export default function Profile() {
       </header>
 
       {isMe && (location.state as { queued?: boolean } | null)?.queued && queue.length > 0 && (
-        <p className="cached-note">
+        <p className="notice notice--warn">
           You're offline, so your listing was saved on this phone. It will post automatically when you reconnect.
         </p>
       )}
 
       {isMe && queue.length > 0 && (
         <>
-          <h2 className="results-heading">
+          <h2 className="results-title">
             Waiting to post <span className="count">{queue.length}</span>
           </h2>
           <ul className="queue-list">
@@ -96,7 +96,7 @@ export default function Profile() {
         </>
       )}
 
-      <h2 className="results-heading">
+      <h2 className="results-title">
         {isMe ? 'Your listings' : `${profile.name.split(' ')[0]}'s listings`}
         <span className="count">{open.length}</span>
       </h2>
