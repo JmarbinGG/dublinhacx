@@ -34,6 +34,8 @@ AI_LIMITS = {
     "assistant_message": (Limit(60, HOUR), Limit(15, HOUR)),
     "assistant_report": (Limit(10, HOUR), Limit(5, HOUR)),
     "search": (Limit(120, 60), Limit(60, 60)),  # GET /api/search when the AI search service is on
+    # Smart search model calls. Over the limit it quietly uses rules instead of 429.
+    "search_smart": (Limit(60, HOUR), Limit(20, HOUR)),
 }
 IP_CEILING = Limit(200, HOUR)
 UPLOAD_LIMIT = Limit(30, HOUR)
@@ -59,6 +61,15 @@ def hit(key: str, limit: Limit) -> None:
         stamps.append(now)
 
 
+def try_hit(key: str, limit: Limit) -> bool:
+    """Like hit(), but returns False instead of raising."""
+    try:
+        hit(key, limit)
+        return True
+    except HTTPException:
+        return False
+
+
 def client_ip(request: Request) -> str:
     # Only trust X-Forwarded-For behind our own proxy (e.g. ngrok via tunnel.py).
     if os.getenv("TRUST_PROXY") == "1":
@@ -76,6 +87,14 @@ def ai_rate_limit(name: str, request: Request, user: Optional[User]) -> None:
         hit(f"{name}:user:{user.id}", per_user)
     else:
         hit(f"{name}:ip:{ip}", per_anon_ip)
+
+
+def ai_allowance(name: str, request: Request, user: Optional[User]) -> bool:
+    """Non-raising ai_rate_limit, for endpoints that can degrade instead."""
+    per_user, per_anon_ip = AI_LIMITS[name]
+    ip = client_ip(request)
+    key = f"{name}:user:{user.id}" if user is not None else f"{name}:ip:{ip}"
+    return try_hit(f"ip:{ip}", IP_CEILING) and try_hit(key, per_user if user is not None else per_anon_ip)
 
 
 # ---------- daily LLM budget ----------

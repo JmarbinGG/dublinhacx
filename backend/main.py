@@ -8,13 +8,14 @@ from fastapi import FastAPI, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
 
 import auth
 from database import Base, engine
-from routers import assistant, listings, search, uploads, users
+from routers import assistant, listings, search, smart_search, uploads, users
 from storage import UPLOAD_DIR
 
 Base.metadata.create_all(bind=engine)
@@ -46,7 +47,10 @@ app.add_middleware(
     expose_headers=["Retry-After"],
 )
 
-AI_PATHS = ("/api/search/ai", "/api/assistant")
+# Low data use: compress every JSON response over ~0.5 KB (lists shrink 3-5x).
+app.add_middleware(GZipMiddleware, minimum_size=500)
+
+AI_PATHS = ("/api/search/ai", "/api/search/smart", "/api/assistant")
 
 
 @app.exception_handler(RequestValidationError)
@@ -72,6 +76,7 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(listings.router)
 app.include_router(search.router)
+app.include_router(smart_search.router)
 app.include_router(uploads.router)
 app.include_router(assistant.router)
 

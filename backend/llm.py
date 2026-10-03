@@ -2,7 +2,8 @@
 OpenAI-compatible API: vLLM, Ollama, DashScope...).
 
     LLM_SERVICE_URL   base URL, e.g. http://localhost:11434/v1 (Ollama)
-    LLM_MODEL         default "qwen2.5"
+    LLM_MODEL         the big model, default "qwen2.5"
+    SMALL_LLM_MODEL   the small/fast model (query routing, refine); defaults to LLM_MODEL
     LLM_API_KEY       optional bearer token
     AI_TIMEOUT_S      per-call timeout, default 12
 
@@ -38,8 +39,16 @@ def configured() -> bool:
     return bool(os.getenv("LLM_SERVICE_URL"))
 
 
-def estimate_tokens(messages: list[dict]) -> int:
-    return sum(len(m["content"]) for m in messages) // 4 + MAX_OUTPUT_TOKENS
+def big_model() -> str:
+    return os.getenv("LLM_MODEL", "qwen2.5")
+
+
+def small_model() -> str:
+    return os.getenv("SMALL_LLM_MODEL") or big_model()
+
+
+def estimate_tokens(messages: list[dict], max_tokens: int = MAX_OUTPUT_TOKENS) -> int:
+    return sum(len(m["content"]) for m in messages) // 4 + max_tokens
 
 
 def _extract_json(text: str) -> dict:
@@ -59,14 +68,20 @@ def _extract_json(text: str) -> dict:
     return data
 
 
-def complete_json(messages: list[dict], schema: type[T], timeout: Optional[float] = None) -> tuple[T, int]:
+def complete_json(
+    messages: list[dict],
+    schema: type[T],
+    timeout: Optional[float] = None,
+    model: Optional[str] = None,
+    max_tokens: int = MAX_OUTPUT_TOKENS,
+) -> tuple[T, int]:
     """Send `messages`, parse the reply as JSON and validate it against
-    `schema`. Returns (parsed, tokens_used)."""
+    `schema`. Returns (parsed, tokens_used). `model` defaults to the big one."""
     url = os.getenv("LLM_SERVICE_URL")
     if not url:
         raise LLMError("LLM_SERVICE_URL unset")
 
-    estimated = estimate_tokens(messages)
+    estimated = estimate_tokens(messages, max_tokens)
     if not limits.reserve_llm_call(estimated):
         raise LLMError("daily AI budget spent")
 
@@ -77,10 +92,10 @@ def complete_json(messages: list[dict], schema: type[T], timeout: Optional[float
         resp = requests.post(
             f"{url.rstrip('/')}/chat/completions",
             json={
-                "model": os.getenv("LLM_MODEL", "qwen2.5"),
+                "model": model or big_model(),
                 "messages": messages,
                 "temperature": 0.2,
-                "max_tokens": MAX_OUTPUT_TOKENS,
+                "max_tokens": max_tokens,
                 "response_format": {"type": "json_object"},
                 "stream": False,
             },
