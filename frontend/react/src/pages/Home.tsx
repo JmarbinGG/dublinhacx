@@ -8,6 +8,8 @@ import { useCommunities } from '../context/CommunityContext'
 import { useSummary } from '../hooks/useItems'
 import { GROUPS } from '../lib/categories'
 import { timeAgo } from '../lib/geo'
+import { t } from '../i18n'
+import Trans from '../i18n/Trans'
 
 /** Render children only after the first paint - rows below the fold
  * shouldn't hold up the tiles. */
@@ -34,13 +36,13 @@ export default function Home() {
   return (
     <>
       <section className="home-head">
-        <h1>What do you need?</h1>
+        <h1>{t('home.title')}</h1>
         <SearchBar size="large" />
       </section>
 
       <CategoryTiles summary={summary.data} />
       {summary.cachedAt && (
-        <p className="hint">Counts saved {timeAgo(new Date(summary.cachedAt).toISOString())} - you're offline.</p>
+        <p className="hint">{t('home.countsSaved', { ago: timeAgo(new Date(summary.cachedAt).toISOString()) })}</p>
       )}
       {summary.error && !summary.data && <ErrorState message={summary.error} onRetry={summary.reload} />}
 
@@ -53,10 +55,9 @@ export default function Home() {
               <section key={group.id} className="near-row" aria-labelledby={`row-${group.id}`}>
                 <div className="section-head">
                   <h2 id={`row-${group.id}`}>
-                    {group.label}
-                    {home ? ' near you' : ''}
+                    {home ? t('home.nearYou', { group: group.label }) : group.label}
                   </h2>
-                  <Link to={`/app/c/${group.id}`}>See all {row.count}</Link>
+                  <Link to={`/app/c/${group.id}`}>{t('home.seeAll', { n: row.count })}</Link>
                 </div>
                 <div className="row">
                   {row.items.map((listing) => (
@@ -70,7 +71,7 @@ export default function Home() {
 
       {!home && (
         <p className="hint">
-          Set your town in <Link to="/communities">Towns</Link> to see what's closest first.
+          <Trans k="home.setTown" tags={{ link: (text) => <Link to="/communities">{text}</Link> }} />
         </p>
       )}
     </>

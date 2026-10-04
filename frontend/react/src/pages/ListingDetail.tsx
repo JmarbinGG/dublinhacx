@@ -11,6 +11,7 @@ import { useListing, useProfile } from '../hooks/useItems'
 import { topicLabel } from '../lib/categories'
 import { timeAgo } from '../lib/geo'
 import { STATUSES, exchangeLabel, kindLabel, typeLabel, type ListingStatus } from '../types'
+import { t } from '../i18n'
 
 export default function ListingDetail() {
   const { id = '' } = useParams()
@@ -25,7 +26,7 @@ export default function ListingDetail() {
 
   const backButton = (
     <button type="button" className="back" onClick={() => navigate(-1)}>
-      &larr; Back
+      &larr; {t('listingDetail.back')}
     </button>
   )
 
@@ -33,7 +34,7 @@ export default function ListingDetail() {
     return (
       <section>
         {backButton}
-        <Loading label="Loading listing..." />
+        <Loading label={t('listingDetail.loadingListing')} />
       </section>
     )
   }
@@ -42,8 +43,8 @@ export default function ListingDetail() {
     return (
       <section>
         {backButton}
-        <ErrorState message={error ?? 'That listing could not be found.'} onRetry={reload} />
-        <Link to="/search">Back to everything shared</Link>
+        <ErrorState message={error ?? t('listingDetail.notFound')} onRetry={reload} />
+        <Link to="/search">{t('listingDetail.backToAllShared')}</Link>
       </section>
     )
   }
@@ -59,30 +60,30 @@ export default function ListingDetail() {
       await updateListing(listing.id, { status }, token)
       reload()
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Could not update.')
+      setActionError(err instanceof Error ? err.message : t('listingDetail.couldNotUpdate'))
     } finally {
       setBusy(false)
     }
   }
 
   async function remove() {
-    if (!token || !listing || !window.confirm(`Delete "${listing.title}"? This can't be undone.`)) return
+    if (!token || !listing || !window.confirm(t('listingDetail.deleteConfirm', { title: listing.title }))) return
     setBusy(true)
     try {
       await deleteListing(listing.id, token)
       navigate(`/users/${listing.owner.id}`)
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Could not delete.')
+      setActionError(err instanceof Error ? err.message : t('listingDetail.couldNotDelete'))
       setBusy(false)
     }
   }
 
   const rows: [string, string | null | undefined][] = [
-    ['Exchange', [exchangeLabel(listing.exchange), listing.price].filter(Boolean).join(' · ')],
-    ['Quantity', listing.quantity],
-    ['Category', listing.category ? topicLabel(listing.category) : null],
-    ['Tags', listing.tags.join(', ')],
-    ['Posted', timeAgo(listing.created_at)],
+    [t('listingDetail.exchange'), [exchangeLabel(listing.exchange), listing.price].filter(Boolean).join(' · ')],
+    [t('listingDetail.quantity'), listing.quantity],
+    [t('listingDetail.category'), listing.category ? topicLabel(listing.category) : null],
+    [t('listingDetail.tags'), listing.tags.join(', ')],
+    [t('listingDetail.posted'), timeAgo(listing.created_at)],
   ]
 
   return (
@@ -119,16 +120,16 @@ export default function ListingDetail() {
           <strong>{listing.owner.name}</strong>
           {listing.owner.community && <span className="owner-row__town">{listing.owner.community}</span>}
         </span>
-        <span className="owner-row__more">Profile</span>
+        <span className="owner-row__more">{t('listingDetail.profile')}</span>
       </Link>
 
       {isMine ? (
         <div className="owner-tools">
           <Link to={`/listings/${listing.id}/edit`} className="secondary-button">
-            Edit
+            {t('listingDetail.edit')}
           </Link>
           <label className="field">
-            <span>Status</span>
+            <span>{t('listingDetail.status')}</span>
             <select value={listing.status} disabled={busy} onChange={(e) => setStatus(e.target.value as ListingStatus)}>
               {STATUSES.map((status) => (
                 <option key={status.id} value={status.id}>
@@ -138,7 +139,7 @@ export default function ListingDetail() {
             </select>
           </label>
           <button type="button" className="secondary-button danger-button" disabled={busy} onClick={remove}>
-            Delete
+            {t('listingDetail.delete')}
           </button>
           {actionError && (
             <p className="form-error" role="alert">
@@ -149,22 +150,22 @@ export default function ListingDetail() {
       ) : (
         <div id="connect" className="connect-box">
           {cachedAt ? (
-            <p>You're offline - contact details will show when you reconnect.</p>
+            <p>{t('listingDetail.offlineContact')}</p>
           ) : owner.loading ? (
-            <p>Loading contact...</p>
+            <p>{t('listingDetail.loadingContact')}</p>
           ) : owner.data?.contact ? (
             <>
               <p>
                 {listing.kind === 'request'
-                  ? `Can you help ${listing.owner.name}? Get in touch:`
-                  : `Ask ${listing.owner.name} about it, or offer a trade:`}
+                  ? t('listingDetail.canYouHelp', { name: listing.owner.name })
+                  : t('listingDetail.askOwner', { name: listing.owner.name })}
               </p>
               <ContactLink contact={owner.data.contact} subject={`Banyan: ${listing.title}`} />
             </>
           ) : (
             <p>
-              {listing.owner.name} hasn't shared contact details yet.{' '}
-              <Link to={`/users/${listing.owner.id}`}>See their profile</Link>.
+              {t('listingDetail.noContact', { name: listing.owner.name })}{' '}
+              <Link to={`/users/${listing.owner.id}`}>{t('listingDetail.seeProfile')}</Link>.
             </p>
           )}
         </div>

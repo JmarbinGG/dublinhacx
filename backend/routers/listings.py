@@ -7,6 +7,7 @@ from sqlalchemy.orm import Query as OrmQuery, Session as DbSession, joinedload
 
 import categories
 import communities
+import i18n
 from auth import current_user
 from communities import Community
 from database import get_db
@@ -275,6 +276,7 @@ def _create(db: DbSession, body: ListingCreate, user: User) -> tuple[Listing, bo
     db.add(listing)
     db.commit()
     db.refresh(listing)
+    i18n.translate_later("listing", listing.id)
     return listing, True
 
 
@@ -331,6 +333,8 @@ def update_listing(
     db.refresh(listing)
     if listing.image != old_image:
         delete_if_orphaned(db, old_image)
+    if set(changes) & set(i18n.FIELDS["listing"]):
+        i18n.translate_later("listing", listing.id)
     return listing_out(listing)
 
 

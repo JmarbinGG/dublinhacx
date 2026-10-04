@@ -5,6 +5,7 @@ import { GROUPS } from '../lib/categories'
 import { motionAllowed } from '../lib/motion'
 import { openFromTile } from '../lib/viewTransition'
 import Icon from './Icon'
+import { t } from '../i18n'
 
 // The tiles' entrance plays once per visit, on first load only.
 let entered = false
@@ -19,7 +20,7 @@ export default function CategoryTiles({ summary }: { summary: Summary | null }) 
   })
 
   return (
-    <nav className={`tiles${enter ? ' tiles--enter' : ''}`} aria-label="Categories">
+    <nav className={`tiles${enter ? ' tiles--enter' : ''}`} aria-label={t('home.categories')}>
       {GROUPS.map((group, i) => {
         const href = `/app/c/${group.id}`
         const count = summary?.[group.id]?.count

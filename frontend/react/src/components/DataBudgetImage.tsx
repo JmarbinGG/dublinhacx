@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { canCheckSize, resolveImageUrl } from '../api/client'
 import { formatKb, useDataBudget } from '../context/DataBudgetContext'
 import Icon, { type IconName } from './Icon'
+import { t } from '../i18n'
 
 type Props = {
   src: string | null | undefined
@@ -78,17 +79,17 @@ export default function DataBudgetImage({ src, alt, square, knownSizeKb, tileIco
   }
 
   if (tileIcon) {
-    const size = sizeKb ? formatKb(sizeKb) : 'Photo'
+    const size = sizeKb ? formatKb(sizeKb) : t('img.photo')
     return (
       <button
         type="button"
         className={`${frame} photo-tile`}
         onClick={load}
-        aria-label={`Load photo${sizeKb ? `, ${size}` : ''}${overBudget ? ', over your monthly budget' : ''}`}
+        aria-label={[t('img.loadPhoto'), sizeKb ? size : '', overBudget ? t('img.overMonthly') : ''].filter(Boolean).join(', ')}
       >
         <Icon name={failed ? 'alert' : tileIcon} />
-        <span>{failed ? 'Try again' : size}</span>
-        {overBudget && !failed && <span className="photo-tile__warn">over budget</span>}
+        <span>{failed ? t('common.tryAgain') : size}</span>
+        {overBudget && !failed && <span className="photo-tile__warn">{t('img.overBudget')}</span>}
       </button>
     )
   }
@@ -96,17 +97,17 @@ export default function DataBudgetImage({ src, alt, square, knownSizeKb, tileIco
   return (
     <div className={`${frame} budget-image--placeholder`}>
       <span className="budget-image__size">
-        {sizeKb === undefined ? (saver ? 'Photo' : 'Checking size...') : sizeKb === null ? 'Size unknown' : formatKb(sizeKb)}
+        {sizeKb === undefined ? (saver ? t('img.photo') : t('img.checking')) : sizeKb === null ? t('img.sizeUnknown') : formatKb(sizeKb)}
       </span>
       <span className="budget-image__hint">
-        {failed ? "Couldn't load the photo." : overBudget ? 'Over your monthly image budget' : 'Photo hidden to save data'}
+        {failed ? t('img.failed') : overBudget ? t('img.overImageBudget') : t('img.hidden')}
       </span>
       <button
         type="button"
         className="secondary-button budget-image__button"
         onClick={load}
       >
-        {failed ? 'Try again' : overBudget ? 'Load anyway' : 'Load image'}
+        {failed ? t('common.tryAgain') : overBudget ? t('img.loadAnyway') : t('img.load')}
       </button>
     </div>
   )

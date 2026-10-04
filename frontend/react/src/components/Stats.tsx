@@ -1,4 +1,5 @@
 import { useCommunities } from '../context/CommunityContext'
+import { t } from '../i18n'
 
 /** One line of numbers about the network of towns. */
 export default function Stats() {
@@ -10,8 +11,7 @@ export default function Stats() {
 
   return (
     <p className="stats">
-      <strong>{listings}</strong> things shared by <strong>{members}</strong> neighbours across{' '}
-      <strong>{communities.length}</strong> towns.
+      <strong>{listings}</strong> {t('stats.thingsSharedBy', { listings, members, towns: communities.length })} <strong>{members}</strong> {t('stats.neighboursAcross')} <strong>{communities.length}</strong> {t('stats.towns')}.
     </p>
   )
 }

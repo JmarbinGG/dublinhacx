@@ -16,6 +16,7 @@ import { mockAssistantReply } from './aiMock'
 
 export { AI_TEXT_LIMIT, QUERY_LIMIT, cleanText, redactPersonal } from '../lib/text'
 import { AI_TEXT_LIMIT, cleanText } from '../lib/text'
+import { t } from '../i18n'
 
 export type AssistantChip = { code: string; label: string }
 
@@ -61,7 +62,7 @@ const shouldUseDemo = (error: unknown) => import.meta.env.DEV && error instanceo
 function wrapAiError(error: unknown): never {
   if (error instanceof ApiError) {
     if (error.status === 404 || error.status === 410) throw new SessionExpiredError()
-    if (error.status === 409) throw new AiUnavailableError('Still answering your last message - give it a moment.')
+    if (error.status === 409) throw new AiUnavailableError(t('chat.busy'))
     if (error.status === 429) {
       throw new AiUnavailableError(
         `The assistant is busy. Try again${error.retryAfter ? ` in ${error.retryAfter} seconds` : ' shortly'}.`,

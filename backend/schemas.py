@@ -4,6 +4,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, field_validator, model_validator
 
 import categories
+import i18n
 import storage
 from communities import slugify
 from textutil import MAX_QUERY_CHARS
@@ -57,6 +58,14 @@ class UserPublic(UserSummary):
     bio: Optional[str] = None
     contact: Optional[str] = None
     created_at: datetime
+
+    @model_validator(mode="after")
+    def _translate(self):
+        # Others see the bio in their language (X-Lang); the user's own
+        # profile (UserPrivate) always shows what they wrote, for editing.
+        if not isinstance(self, UserPrivate):
+            i18n.apply("user", self.id, self)
+        return self
 
 
 class UserPrivate(UserPublic):
@@ -185,6 +194,11 @@ class ListingOut(ListingBase):
     # Community centre to community centre, only when the request gave an
     # origin (from_community or lat/lng).
     distance_km: Optional[float] = None
+
+    @model_validator(mode="after")
+    def _translate(self):
+        i18n.apply("listing", self.id, self)  # X-Lang: es | hi
+        return self
 
     @computed_field
     @property

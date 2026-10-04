@@ -1,15 +1,16 @@
 import type { IconName } from '../components/Icon'
 import type { Listing, ListingKind, ListingType } from '../types'
+import { t } from '../i18n'
 
 /**
  * The four top-level categories. Offers split by type; every request is
  * "Help wanted" - so each listing is in exactly one group.
  */
 export const GROUPS = [
-  { id: 'materials', label: 'Materials', icon: 'brick', type: 'material', kind: 'offer' },
-  { id: 'equipment', label: 'Equipment & tools', icon: 'tool', type: 'equipment', kind: 'offer' },
-  { id: 'skills', label: 'Skills & jobs', icon: 'skill', type: 'skill', kind: 'offer' },
-  { id: 'help', label: 'Help wanted', icon: 'help', type: undefined, kind: 'request' },
+  { id: 'materials', get label() { return t('group.materials') }, icon: 'brick', type: 'material', kind: 'offer' },
+  { id: 'equipment', get label() { return t('group.equipment') }, icon: 'tool', type: 'equipment', kind: 'offer' },
+  { id: 'skills', get label() { return t('group.skills') }, icon: 'skill', type: 'skill', kind: 'offer' },
+  { id: 'help', get label() { return t('group.help') }, icon: 'help', type: undefined, kind: 'request' },
 ] as const satisfies readonly { id: string; label: string; icon: IconName; type?: ListingType; kind: ListingKind }[]
 
 export type Group = (typeof GROUPS)[number]
@@ -30,13 +31,13 @@ export function groupById(id: string | undefined): Group | undefined {
  * lookup - no request needed for the labels.
  */
 export const TOPICS = [
-  { id: 'farming', label: 'Farming' },
-  { id: 'building', label: 'Building' },
-  { id: 'energy-repair', label: 'Energy and repair' },
-  { id: 'digital-learning', label: 'Digital and learning' },
-  { id: 'crafts', label: 'Crafts' },
-  { id: 'household', label: 'Household' },
-  { id: 'other', label: 'Other' },
+  { id: 'farming', get label() { return t('topic.farming') } },
+  { id: 'building', get label() { return t('topic.building') } },
+  { id: 'energy-repair', get label() { return t('topic.energy-repair') } },
+  { id: 'digital-learning', get label() { return t('topic.digital-learning') } },
+  { id: 'crafts', get label() { return t('topic.crafts') } },
+  { id: 'household', get label() { return t('topic.household') } },
+  { id: 'other', get label() { return t('topic.other') } },
 ] as const
 
 export type TopicId = (typeof TOPICS)[number]['id']
@@ -46,7 +47,7 @@ export function topicOf(listing: Pick<Listing, 'category'>): TopicId {
 }
 
 export function topicLabel(id: string | null | undefined): string {
-  return TOPICS.find((t) => t.id === id)?.label ?? 'Other'
+  return TOPICS.find((topic) => topic.id === id)?.label ?? t('topic.other')
 }
 
 export function isTopic(id: string | null): id is TopicId {

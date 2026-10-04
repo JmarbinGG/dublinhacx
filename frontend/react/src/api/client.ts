@@ -1,3 +1,4 @@
+import { currentLang, t } from '../i18n'
 /**
  * Thin fetch wrapper. Every backend call in the app goes through here so the
  * base URL, timeouts, error handling and JSON parsing live in one place.
@@ -84,7 +85,7 @@ export function resolveImageUrl(path: string | null | undefined): string | null 
 
 /** FastAPI errors are `{ "detail": "..." }`, or a list of validation errors. */
 async function errorMessage(response: Response): Promise<string> {
-  if (response.status === 429) return 'Too many requests - please wait a moment and try again.'
+  if (response.status === 429) return t('error.tooMany')
   try {
     const body: unknown = await response.json()
     const detail = (body as { detail?: unknown } | null)?.detail
@@ -97,8 +98,8 @@ async function errorMessage(response: Response): Promise<string> {
   } catch {
     // Body wasn't JSON - fall through to the generic message below.
   }
-  if (response.status === 404) return 'Not found.'
-  return response.status >= 500 ? 'The server had a problem. Please try again.' : 'Request failed.'
+  if (response.status === 404) return t('error.notFound')
+  return response.status >= 500 ? t('error.server') : t('error.failed')
 }
 
 type RequestOptions = {
@@ -123,6 +124,8 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     Accept: 'application/json',
     'ngrok-skip-browser-warning': 'true',
   }
+  // Listings, bios, search cards and AI replies come back in this language.
+  if (currentLang() !== 'en') headers['X-Lang'] = currentLang()
   if (token) headers.Authorization = `Bearer ${token}`
   // FormData bodies get their multipart Content-Type (with boundary) from the browser.
   if (json !== undefined) headers['Content-Type'] = 'application/json'
@@ -151,10 +154,10 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     if (isAbort(error) && !timedOut) throw error
     throw new ApiError(
       timedOut
-        ? 'The connection is too slow right now - the request timed out.'
+        ? t('error.timeout')
         : navigator.onLine
-          ? "Couldn't reach Banyan. Check your connection and try again."
-          : "You're offline.",
+          ? t('error.unreachable')
+          : t('error.offline'),
     )
   } finally {
     clearTimeout(timer)
@@ -170,7 +173,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   try {
     return (await response.json()) as T
   } catch {
-    throw new ApiError('The server sent a response we could not read.')
+    throw new ApiError(t('error.unreadable'))
   }
 }
 

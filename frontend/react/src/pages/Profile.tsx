@@ -10,6 +10,7 @@ import { Empty, ErrorState, Loading } from '../components/States'
 import { useProfile } from '../hooks/useItems'
 import { QUEUE_CHANGED_EVENT, discardQueued, readQueue } from '../offline/syncQueue'
 import { typeLabel } from '../types'
+import { t } from '../i18n'
 
 function useQueue() {
   const [queue, setQueue] = useState(readQueue)
@@ -33,8 +34,8 @@ export default function Profile() {
   // Refetch when the offline queue drains, so freshly posted listings appear.
   const { data: profile, loading, error, reload } = useProfile(id, isMe, isMe ? queue.length : 0)
 
-  if (loading && !profile) return <Loading label="Loading profile..." />
-  if (error || !profile) return <ErrorState message={error ?? 'Profile not found.'} onRetry={reload} />
+  if (loading && !profile) return <Loading label={t('profile.loading')} />
+  if (error || !profile) return <ErrorState message={error ?? t('profile.notFound')} onRetry={reload} />
 
   const open = profile.listings.filter((l) => l.status !== 'closed')
   const closed = profile.listings.filter((l) => l.status === 'closed')
@@ -53,14 +54,14 @@ export default function Profile() {
             </p>
           )}
           {profile.bio && <p className="profile__bio">{profile.bio}</p>}
-          <p className="profile__since">Member since {new Date(profile.created_at).toLocaleDateString()}</p>
+          <p className="profile__since">{t('profile.memberSince', { date: new Date(profile.created_at).toLocaleDateString() })}</p>
           {isMe ? (
             <div className="profile__actions">
               <Link to="/profile/edit" className="secondary-button">
-                Edit profile
+                {t('profile.editProfile')}
               </Link>
               <Link to="/listings/new" className="primary-button">
-                + Share something
+                {t('profile.shareSomething')}
               </Link>
             </div>
           ) : profile.contact ? (
@@ -73,24 +74,24 @@ export default function Profile() {
 
       {isMe && (location.state as { queued?: boolean } | null)?.queued && queue.length > 0 && (
         <p className="notice notice--warn">
-          You're offline, so your listing was saved on this phone. It will post automatically when you reconnect.
+          {t('profile.offlineSaved')}
         </p>
       )}
 
       {isMe && queue.length > 0 && (
         <>
           <h2 className="results-title">
-            Waiting to post <span className="count">{queue.length}</span>
+            {t('profile.waitingToPost')} <span className="count">{queue.length}</span>
           </h2>
           <ul className="queue-list">
             {queue.map((entry) => (
               <li key={entry.client_id} className="queue-item">
                 <span>
                   <strong>{entry.listing.title}</strong> · {typeLabel(entry.listing.type)}
-                  {entry.error && <span className="queue-item__error"> - rejected: {entry.error}</span>}
+                  {entry.error && <span className="queue-item__error"> - {t('profile.rejected')}: {entry.error}</span>}
                 </span>
                 <button type="button" className="link-button" onClick={() => discardQueued(entry.client_id)}>
-                  Discard
+                  {t('profile.discard')}
                 </button>
               </li>
             ))}
@@ -99,11 +100,11 @@ export default function Profile() {
       )}
 
       <h2 className="results-title">
-        {isMe ? 'Your listings' : `${profile.name.split(' ')[0]}'s listings`}
+        {isMe ? t('profile.yourListings') : t('profile.listingsOf', { name: profile.name.split(' ')[0] })}
         <span className="count">{open.length}</span>
       </h2>
       {open.length === 0 ? (
-        <Empty message={isMe ? "You haven't shared anything yet." : 'Nothing listed right now.'} />
+        <Empty message={isMe ? t('profile.nothingShared') : t('profile.nothingListed')} />
       ) : (
         <div className="grid">
           {open.map((listing) => (
@@ -113,7 +114,7 @@ export default function Profile() {
               actions={
                 isMe ? (
                   <Link to={`/listings/${listing.id}/edit`} className="secondary-button">
-                    Edit
+                    {t('profile.edit')}
                   </Link>
                 ) : undefined
               }
@@ -125,7 +126,7 @@ export default function Profile() {
       {isMe && closed.length > 0 && (
         <details className="closed-listings" onToggle={(e) => setClosedOpen((e.currentTarget as HTMLDetailsElement).open)}>
           <summary>
-            Closed ({closed.length}) <MorphIcon name="chevron" on={closedOpen} />
+            {t('profile.closed', { count: closed.length })} <MorphIcon name="chevron" on={closedOpen} />
           </summary>
           <div className="grid">
             {closed.map((listing) => (
@@ -134,7 +135,7 @@ export default function Profile() {
                 listing={listing}
                 actions={
                   <Link to={`/listings/${listing.id}`} className="secondary-button">
-                    Manage
+                    {t('profile.manage')}
                   </Link>
                 }
               />

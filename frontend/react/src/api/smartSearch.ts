@@ -1,6 +1,7 @@
 import type { Listing, SearchResponse } from '../types'
 import { ApiError, isAbort, isNetworkError, request } from './client'
 import { cachedListings, readCache, writeCache } from './offlineCache'
+import { t } from '../i18n'
 
 /**
  * The one search bar: POST /api/search/smart (backend/routers/smart_search.py).
@@ -113,7 +114,7 @@ function parse(raw: unknown): SmartPage {
   const body = raw as Record<string, unknown> | null
   const state = body?.state as SearchState | undefined
   if (!body || !Array.isArray(body.results) || !state || !isString(state.q)) {
-    throw new ApiError('Unexpected search response.', 502)
+    throw new ApiError(t('searchResults.searchFailed'), 502)
   }
   const cards = (body.results as Card[]).filter(
     (c) => c && Number.isInteger(c.id) && isString(c.title) && Number.isInteger(c.owner_id) && isString(c.owner_name),
@@ -260,8 +261,8 @@ export async function plainFallback(
         source: 'plain',
         note:
           error instanceof ApiError && error.status === 429
-            ? `Search is busy${error.retryAfter ? ` for about ${error.retryAfter} s` : ''}. Showing plain keyword results.`
-            : 'Smart search is unavailable right now. Showing plain keyword results.',
+            ? t('searchResults.searchFailed') + (error.retryAfter ? ` ${t('searchResults.searchFailed')}` : '')
+            : t('searchResults.searchFailed'),
         cachedAt: null,
       }
     } catch (plainError) {
@@ -287,7 +288,7 @@ export async function plainFallback(
     matches: {},
     has_more: hits.length > offset + SMART_PAGE,
     source: 'offline',
-    note: "You're offline - showing matches from listings saved on this phone.",
+    note: t('searchResults.savedCopyOffline', { ago: '' }),
     cachedAt: savedAt,
   }
 }

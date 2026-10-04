@@ -2,16 +2,18 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { formatKb, useDataBudget } from '../context/DataBudgetContext'
-import { LANGS, readLang, saveLang, type LangId } from '../lib/lang'
+import { LANGS, type LangId } from '../lib/lang'
+import { currentLang, setLanguage } from '../i18n'
 import { applyTheme, readTheme, type ThemeChoice } from '../lib/theme'
 import Avatar from './Avatar'
 import Icon from './Icon'
 import MorphIcon from './MorphIcon'
+import { t } from '../i18n'
 
 const THEMES: { id: ThemeChoice; label: string }[] = [
-  { id: 'system', label: 'Auto' },
-  { id: 'light', label: 'Light' },
-  { id: 'dark', label: 'Dark' },
+  { id: 'system', get label() { return t('menu.themeAuto') } },
+  { id: 'light', get label() { return t('menu.themeLight') } },
+  { id: 'dark', get label() { return t('menu.themeDark') } },
 ]
 
 /** Everything that isn't search or Post: profile, towns, data saver (with
@@ -21,7 +23,7 @@ export default function AvatarMenu() {
   const { usedKb, budgetKb } = useDataBudget()
   const [open, setOpen] = useState(false)
   const [theme, setTheme] = useState<ThemeChoice>(readTheme)
-  const [lang, setLang] = useState<LangId>(() => readLang() ?? 'en')
+  const [lang, setLang] = useState<LangId>(currentLang)
   const ref = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
 
@@ -51,7 +53,7 @@ export default function AvatarMenu() {
         className="menu__button"
         aria-haspopup="true"
         aria-expanded={open}
-        aria-label={user ? `Account menu for ${user.name}` : 'Menu'}
+        aria-label={user ? t('menu.accountFor', { name: user.name }) : t('menu.menu')}
         onClick={() => setOpen(!open)}
       >
         {user ? <Avatar name={user.name} size="sm" /> : <MorphIcon name="menuClose" on={open} />}
@@ -62,56 +64,55 @@ export default function AvatarMenu() {
           {user ? (
             <Link role="menuitem" to={`/users/${user.id}`} className="menu__item">
               <strong>{user.name}</strong>
-              <span className="menu__sub">Your profile and listings</span>
+              <span className="menu__sub">{t('menu.profile')}</span>
             </Link>
           ) : (
             <>
               <Link role="menuitem" to="/signin" className="menu__item">
-                Sign in
+                {t('menu.signIn')}
               </Link>
               <Link role="menuitem" to="/signup" className="menu__item">
-                Join Banyan
+                {t('menu.join')}
               </Link>
             </>
           )}
           <Link role="menuitem" to="/communities" className="menu__item">
-            Towns
+            {t('footer.towns')}
           </Link>
           <Link role="menuitem" to="/data-saver" className="menu__item">
-            Data saver
+            {t('footer.dataSaver')}
             <span className={`menu__sub${over ? ' menu__sub--warn' : ''}`}>
               {over && <Icon name="alert" />}
-              Photos {formatKb(usedKb)} of {formatKb(budgetKb)}
-              {over ? ' - over budget' : ''}
+              {t(over ? 'menu.photosOver' : 'menu.photos', { used: formatKb(usedKb), budget: formatKb(budgetKb) })}
             </span>
           </Link>
           <Link role="menuitem" to="/about" className="menu__item">
-            About
+            {t('footer.about')}
           </Link>
 
-          <div className="menu__theme" role="group" aria-label="Theme">
+          <div className="menu__theme" role="group" aria-label={t('menu.theme')}>
             {/* Sun morphs into moon with the theme. */}
             <MorphIcon
               name="theme"
               on={theme === 'dark' || (theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)}
             />
-            {THEMES.map((t) => (
+            {THEMES.map((th) => (
               <button
-                key={t.id}
+                key={th.id}
                 type="button"
                 className="seg"
-                aria-pressed={theme === t.id}
+                aria-pressed={theme === th.id}
                 onClick={() => {
-                  setTheme(t.id)
-                  applyTheme(t.id)
+                  setTheme(th.id)
+                  applyTheme(th.id)
                 }}
               >
-                {t.label}
+                {th.label}
               </button>
             ))}
           </div>
 
-          <div className="menu__theme" role="group" aria-label="Language">
+          <div className="menu__theme" role="group" aria-label={t('menu.language')}>
             {LANGS.map((l) => (
               <button
                 key={l.id}
@@ -121,7 +122,7 @@ export default function AvatarMenu() {
                 aria-pressed={lang === l.id}
                 onClick={() => {
                   setLang(l.id)
-                  saveLang(l.id)
+                  void setLanguage(l.id)
                 }}
               >
                 {l.native}
@@ -139,7 +140,7 @@ export default function AvatarMenu() {
                 navigate('/app')
               }}
             >
-              Sign out
+              {t('menu.signOut')}
             </button>
           )}
         </div>

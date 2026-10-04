@@ -3,6 +3,7 @@ import { listCommunities } from '../api/users'
 import { useAuth } from '../auth/AuthContext'
 import { distanceKm, type Point } from '../lib/geo'
 import type { CommunityStat, Listing } from '../types'
+import { formatNumber, t } from '../i18n'
 
 const HOME_KEY = 'banyan.homeCommunity'
 
@@ -88,7 +89,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       setHome,
       pointOf,
       describeDistance(listing) {
-        const town = listing.owner.community ?? 'Unknown town'
+        const town = listing.owner.community ?? t('common.unknownTown')
         const sameTown = Boolean(home && listing.owner.community === home)
         const theirs = pointOf(listing.owner.community)
         // Always name the town, even your own - every card saying "Your town"
@@ -96,7 +97,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         const km = listing.distance_km ?? (homePoint && theirs ? distanceKm(homePoint, theirs) : sameTown ? 0 : null)
         if (km == null) return { text: town, tone: 'unknown', km: null }
         return {
-          text: `${km < 1 ? '<1' : Math.round(km)} km · ${town}`,
+          text: km < 1 ? t('common.lessThan1km', { town }) : t('common.km', { km: formatNumber(Math.round(km)), town }),
           tone: sameTown ? 'home' : km <= NEARBY_KM ? 'near' : 'far',
           km,
         }

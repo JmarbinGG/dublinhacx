@@ -1,15 +1,16 @@
 import { Link } from 'react-router-dom'
+import { t } from '../i18n'
 
 export default function Footer() {
   return (
     <footer className="footer">
       <p>
-        <strong>Banyan</strong> - share what you have, find what you need.
+        <strong>Banyan</strong> {t('footer.tagline')}
       </p>
-      <nav aria-label="Footer">
-        <Link to="/about">About</Link>
-        <Link to="/communities">Towns</Link>
-        <Link to="/data-saver">Data saver</Link>
+      <nav aria-label={t('footer.label')}>
+        <Link to="/about">{t('footer.about')}</Link>
+        <Link to="/communities">{t('footer.towns')}</Link>
+        <Link to="/data-saver">{t('footer.dataSaver')}</Link>
       </nav>
     </footer>
   )

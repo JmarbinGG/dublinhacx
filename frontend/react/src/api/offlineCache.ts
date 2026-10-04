@@ -1,4 +1,5 @@
 import { isNetworkError } from './client'
+import { currentLang } from '../i18n'
 
 /**
  * Keeps the last good response for a request in localStorage, so on a
@@ -8,6 +9,8 @@ import { isNetworkError } from './client'
  */
 
 const PREFIX = 'banyan.cache.'
+// Responses differ by language (X-Lang), so each language has its own copy.
+const langKey = (key: string) => (currentLang() === 'en' ? key : `${key}@${currentLang()}`)
 const MAX_ENTRIES = 40
 
 type Entry<T> = { data: T; savedAt: number }
@@ -17,7 +20,7 @@ export type Cached<T> = { data: T; cachedAt: number | null }
 
 export function readCache<T>(key: string): Entry<T> | null {
   try {
-    const raw = localStorage.getItem(PREFIX + key)
+    const raw = localStorage.getItem(PREFIX + langKey(key))
     return raw ? (JSON.parse(raw) as Entry<T>) : null
   } catch {
     return null
@@ -44,13 +47,13 @@ function evict() {
 export function writeCache<T>(key: string, data: T) {
   const value = JSON.stringify({ data, savedAt: Date.now() })
   try {
-    localStorage.setItem(PREFIX + key, value)
+    localStorage.setItem(PREFIX + langKey(key), value)
     evict()
   } catch {
     // Storage full - drop old entries and try once more, else give up.
     try {
       evict()
-      localStorage.setItem(PREFIX + key, value)
+      localStorage.setItem(PREFIX + langKey(key), value)
     } catch {
       // The app just won't have this response offline.
     }

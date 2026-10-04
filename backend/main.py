@@ -17,6 +17,7 @@ from sqlalchemy import inspect, text
 
 import auth
 import categories
+import i18n
 from database import Base, SessionLocal, engine
 from models import Listing
 from routers import assistant, listings, search, smart_search, uploads, users
@@ -39,6 +40,16 @@ with SessionLocal() as _db:
         _l.category = categories.normalize(_l.category, f"{_l.title} {_l.tags or ''}")
     _db.commit()
 
+with SessionLocal() as _db:
+    i18n.load(_db)
+# TRANSLATE_BACKFILL=1: translate anything posted while the translation
+# model was unreachable (host.sh sets it). Off in dev so --reload restarts
+# don't start machine-translating.
+if os.getenv("TRANSLATE_BACKFILL") == "1":
+    import threading
+
+    threading.Thread(target=i18n.backfill, daemon=True).start()
+
 PRODUCTION = os.getenv("APP_ENV") == "production"
 
 app = FastAPI(title="Banyan API", description="Share what you have. Find what you need.")
@@ -54,12 +65,14 @@ app.add_middleware(
         r"|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?"
     ),
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
-    allow_headers=["Authorization", "Content-Type", "Accept", "ngrok-skip-browser-warning"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-Lang", "ngrok-skip-browser-warning"],
     expose_headers=["Retry-After", "X-Search-Version"],
 )
 
 # Low data use: compress every JSON response over ~0.5 KB (lists shrink 3-5x).
 app.add_middleware(GZipMiddleware, minimum_size=500)
+# X-Lang: es | hi -> listings and bios in that language (i18n.py).
+app.add_middleware(i18n.LangMiddleware)
 
 AI_PATHS = ("/api/search/ai", "/api/search/smart", "/api/assistant")
 

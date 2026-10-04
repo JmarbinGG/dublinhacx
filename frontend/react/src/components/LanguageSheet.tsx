@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { LANGS, readLang, saveLang, type LangId } from '../lib/lang'
+import { LANGS, readLang, type LangId } from '../lib/lang'
+import { setLanguage, t } from '../i18n'
 import Icon from './Icon'
 
 type Props = { onDone: () => void; onClose: () => void }
@@ -28,8 +29,8 @@ export default function LanguageSheet({ onDone, onClose }: Props) {
       <div className="sheet-backdrop" onClick={onClose} />
       <div className="sheet lang-sheet" role="dialog" aria-modal="true" aria-labelledby="lang-title">
         <div className="sheet__head">
-          <h2 id="lang-title">Choose your language</h2>
-          <button type="button" className="icon-button" aria-label="Close" onClick={onClose}>
+          <h2 id="lang-title">{t('lang.choose')}</h2>
+          <button type="button" className="icon-button" aria-label={t('common.close')} onClick={onClose}>
             <Icon name="x" />
           </button>
         </div>
@@ -50,16 +51,16 @@ export default function LanguageSheet({ onDone, onClose }: Props) {
             </label>
           ))}
         </div>
-        <p className="hint">Banyan is in English for now. Your choice is saved for when other languages arrive.</p>
+        <p className="hint">{t('lang.hint')}</p>
         <button
           type="button"
           className="primary-button lang-sheet__go"
           onClick={() => {
-            saveLang(choice)
-            onDone()
+            // Strings load first (a few KB), then the app re-renders in the new language.
+            void setLanguage(choice).finally(onDone)
           }}
         >
-          Continue
+          {t('common.continue')}
         </button>
       </div>
     </>

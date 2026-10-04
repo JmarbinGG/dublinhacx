@@ -2,6 +2,7 @@ import { Link, useLocation } from 'react-router-dom'
 import AvatarMenu from './AvatarMenu'
 import Icon from './Icon'
 import SearchBar from './SearchBar'
+import { t } from '../i18n'
 
 /**
  * Banyan mark: a canopy, a trunk and four aerial roots, hand-drawn as SVG
@@ -40,7 +41,7 @@ export default function Navbar() {
   return (
     <header className="topbar">
       <div className="topbar__inner">
-        <Link to="/app" className="topbar__logo" aria-label="Banyan home">
+        <Link to="/app" className="topbar__logo" aria-label={t('common.homeLabel')}>
           <Wordmark />
         </Link>
         {showSearch && (
@@ -48,9 +49,9 @@ export default function Navbar() {
             <SearchBar key={query} initialQuery={query} />
           </div>
         )}
-        <Link to="/listings/new" className="primary-button topbar__post" aria-label="Post a listing">
+        <Link to="/listings/new" className="primary-button topbar__post" aria-label={t('nav.postLabel')}>
           <Icon name="plus" />
-          <span>Post</span>
+          <span>{t('nav.post')}</span>
         </Link>
         <AvatarMenu key={pathname} />
       </div>

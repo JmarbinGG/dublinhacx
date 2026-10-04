@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { QUERY_LIMIT, cleanQuery } from '../lib/text'
 import { cancelSearch, useSearchBusy } from '../lib/searchActivity'
 import MorphIcon from './MorphIcon'
+import { t } from '../i18n'
 
 type Props = {
   /** Pre-fill the input. Callers pass key={query} so back/forward re-syncs it. */
@@ -26,9 +27,6 @@ export default function SearchBar({ initialQuery = '', size = 'bar' }: Props) {
     const params = new URLSearchParams(location.pathname === '/search' ? location.search : '')
     if (query) params.set('q', query)
     else params.delete('q')
-    // A new query starts fresh: no refinements, excluded terms or paging.
-    params.delete('r')
-    params.delete('x')
     params.delete('page')
     const search = params.toString()
     navigate(search ? `/search?${search}` : '/search')
@@ -51,7 +49,7 @@ export default function SearchBar({ initialQuery = '', size = 'bar' }: Props) {
         onClick={busy ? cancelSearch : undefined}
         tabIndex={busy ? 0 : -1}
         aria-hidden={!busy}
-        aria-label={busy ? 'Cancel search' : undefined}
+        aria-label={busy ? t('search.cancel') : undefined}
       >
         <MorphIcon name="searchCancel" on={busy} />
       </button>
@@ -60,12 +58,12 @@ export default function SearchBar({ initialQuery = '', size = 'bar' }: Props) {
         value={value}
         maxLength={QUERY_LIMIT}
         onChange={(event) => setValue(event.target.value)}
-        placeholder={size === 'large' ? 'Pump set, tailoring, drip pipe...' : 'Search'}
-        aria-label="Search listings and people"
+        placeholder={size === 'large' ? t('search.placeholderLarge') : t('search.placeholder')}
+        aria-label={t('search.label')}
         enterKeyHint="search"
       />
       <button type="submit" className="visually-hidden">
-        Search
+        {t('search.submit')}
       </button>
     </form>
   )

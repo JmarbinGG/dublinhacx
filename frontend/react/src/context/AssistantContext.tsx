@@ -14,6 +14,7 @@ import { useAuth } from '../auth/AuthContext'
 import { randomId } from '../lib/geo'
 import { useCommunities } from './CommunityContext'
 import { AI_ANSWER_KB, useDataBudget } from './DataBudgetContext'
+import { t } from '../i18n'
 
 /**
  * The assistant's conversation. The server owns the real history - the
@@ -99,7 +100,7 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
 
       const userCount = stored.messages.filter((m) => m.role === 'user').length
       if (stored.sessionId && userCount >= MAX_USER_MESSAGES_PER_SESSION) {
-        add({ role: 'notice', text: 'This chat is getting long - start a new one to keep going.' })
+        add({ role: 'notice', text: t('chat.long') })
         return
       }
 
@@ -112,7 +113,7 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
       setCoolingDown(true)
       setTimeout(() => setCoolingDown(false), COOLDOWN_MS)
       add({ role: 'user', text })
-      if (redacted) add({ role: 'notice', text: 'Contact details and locations are never sent to the assistant, so they were removed.' })
+      if (redacted) add({ role: 'notice', text: t('chat.redacted') })
 
       const controller = new AbortController()
       controllerRef.current = controller
@@ -132,7 +133,7 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
           // The server expired the session: start a fresh one and resend once.
           sessionId = await startAssistantSession(token)
           setStored((prev) => ({ ...prev, sessionId }))
-          add({ role: 'notice', text: 'Started a new chat session.' })
+          add({ role: 'notice', text: t('chat.restarted') })
           reply = await sendAssistantMessage(sessionId, text, home, token, controller.signal)
         }
         add({ role: 'assistant', text: reply.text, chips: reply.chips, listingIds: reply.listing_ids, demo: reply.demo })
@@ -140,10 +141,10 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
         setFailedTurns((n) => (reply.listing_ids.length === 0 && reply.chips.length === 0 ? n + 1 : 0))
       } catch (error) {
         if (isAbort(error)) {
-          add({ role: 'notice', text: 'Stopped.' })
+          add({ role: 'notice', text: t('chat.stopped') })
           return
         }
-        add({ role: 'notice', text: error instanceof Error ? error.message : 'The assistant had a problem.' })
+        add({ role: 'notice', text: error instanceof Error ? error.message : t('chat.problem') })
         setFailedTurns((n) => n + 1)
       } finally {
         setPending(false)
@@ -171,7 +172,7 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
       },
       async report(reason) {
         if (stored.sessionId) await reportAssistant(stored.sessionId, reason, token).catch(() => {})
-        add({ role: 'notice', text: 'Thanks - the problem was reported.' })
+        add({ role: 'notice', text: t('chat.reported') })
         setFailedTurns(0)
       },
     }

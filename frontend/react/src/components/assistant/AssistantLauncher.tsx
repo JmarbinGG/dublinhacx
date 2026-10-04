@@ -1,6 +1,7 @@
 import { Suspense, lazy, useCallback, useRef, useState } from 'react'
 import { useDataBudget } from '../../context/DataBudgetContext'
 import Icon from '../Icon'
+import { t } from '../../i18n'
 
 // The panel, its conversation state and the AI client load on first tap.
 const Assistant = lazy(() => import('./AssistantWidget'))
@@ -25,7 +26,7 @@ export default function AssistantLauncher() {
 
   if (open) {
     return (
-      <Suspense fallback={<div className="chat chat--loading" role="status">Opening...</div>}>
+      <Suspense fallback={<div className="chat chat--loading" role="status">{t('chat.opening')}</div>}>
         <Assistant origin={origin} onClose={close} />
       </Suspense>
     )
@@ -42,7 +43,7 @@ export default function AssistantLauncher() {
       }}
     >
       <Icon name="chat" />
-      Ask Banyan
+      {t('chat.title')}
     </button>
   )
 }

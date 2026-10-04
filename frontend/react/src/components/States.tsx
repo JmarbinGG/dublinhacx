@@ -1,6 +1,7 @@
 /** Loading / empty / error placeholders, kept together since they are tiny. */
+import { t } from '../i18n'
 
-export function Loading({ label = 'Loading...' }: { label?: string }) {
+export function Loading({ label = t('common.loading') }: { label?: string }) {
   return (
     <p className="state" role="status" aria-live="polite">
       {label}
@@ -12,7 +13,7 @@ export function Loading({ label = 'Loading...' }: { label?: string }) {
  * shimmer: an endless animation costs battery and CPU for nothing. */
 export function SkeletonGrid({ count = 6 }: { count?: number }) {
   return (
-    <div className="grid" role="status" aria-label="Loading listings">
+    <div className="grid" role="status" aria-label={t('common.loadingListings')}>
       {Array.from({ length: count }, (_, i) => (
         <div key={i} className="skeleton-card" aria-hidden="true">
           <span className="skeleton-line skeleton-line--title" />
@@ -38,7 +39,7 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
       <p>{message}</p>
       {onRetry && (
         <button type="button" className="secondary-button" onClick={onRetry}>
-          Try again
+          {t('common.tryAgain')}
         </button>
       )}
     </div>

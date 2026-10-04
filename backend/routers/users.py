@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session as DbSession
 
 import categories
 import communities
+import i18n
 from auth import current_user
 from database import get_db
 from models import Listing, User
@@ -77,6 +78,8 @@ def update_me(body: UserUpdate, user: User = Depends(current_user), db: DbSessio
     db.refresh(user)
     if user.photo != old_photo:
         delete_if_orphaned(db, old_photo)
+    if "bio" in changes and user.bio:
+        i18n.translate_later("user", user.id)
     return UserPrivate.model_validate(user)
 
 

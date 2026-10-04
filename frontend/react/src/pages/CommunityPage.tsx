@@ -3,6 +3,7 @@ import Avatar from '../components/Avatar'
 import ItemGrid from '../components/ItemGrid'
 import { useCommunities } from '../context/CommunityContext'
 import { useListings, useUsers } from '../hooks/useItems'
+import { t } from '../i18n'
 
 /** /communities/:name - who lives there and what they're sharing. */
 export default function CommunityPage() {
@@ -14,19 +15,19 @@ export default function CommunityPage() {
   return (
     <section className="stack">
       <Link to="/communities" className="back">
-        &larr; All towns
+        &larr; {t('towns.all')}
       </Link>
       <div className="section-head">
         <h1>{name}</h1>
         {home !== name && (
           <button type="button" className="secondary-button" onClick={() => setHome(name)}>
-            This is my town
+            {t('towns.mine')}
           </button>
         )}
       </div>
 
       {people.data && people.data.length > 0 && (
-        <div className="people" aria-label="People">
+        <div className="people" aria-label={t('towns.people')}>
           {people.data.map((person) => (
             <Link key={person.id} to={`/users/${person.id}`} className="person">
               <Avatar name={person.name} size="sm" />
@@ -39,14 +40,14 @@ export default function CommunityPage() {
       )}
 
       <h2 className="results-title">
-        Shared in {name}
+        {t('towns.sharedIn', { name })}
         {listings.data && <span className="count">{listings.data.length}</span>}
       </h2>
       <ItemGrid
         listings={listings.data}
         loading={listings.loading}
         error={listings.error}
-        emptyMessage={`Nothing shared in ${name} yet.`}
+        emptyMessage={t('towns.empty', { name })}
         onRetry={listings.reload}
       />
     </section>

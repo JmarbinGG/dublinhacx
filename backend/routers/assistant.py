@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session as DbSession
 
 import categories
 import communities
+import i18n
 import llm
 from auth import optional_user
 from database import get_db
@@ -324,6 +325,11 @@ def chat(
         context.append(f"The shopper lives in {sess.community}.")
     if _filters(sess):
         context.append(f"Filters the shopper chose: {json.dumps(_filters(sess))}.")
+    lang = i18n.current_lang.get()
+    if lang in i18n.LANGS:
+        # Listings are stored in English: search in English, talk in theirs.
+        context.append(f"Write \"text\" and chip labels in simple {i18n.LANG_NAMES[lang]}"
+                       f"{' (Devanagari)' if lang == 'hi' else ''}. Search queries stay in English.")
     messages = [{"role": "system", "content": ASSISTANT_PROMPT + ("\n\n" + " ".join(context) if context else "")}]
     messages += history
     if last_shown:

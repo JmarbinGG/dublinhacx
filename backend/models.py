@@ -112,3 +112,17 @@ class AssistantMessage(Base):
     content = Column(Text, nullable=False)
     listing_ids = Column(String)  # comma-separated ids shown with an assistant reply
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class Translation(Base):
+    """A listing's or user's text in another language (see i18n.py).
+    `src_hash` is the hash of the original it was made from, so an edit
+    makes it stale instead of showing an outdated translation."""
+
+    __tablename__ = "translations"
+
+    kind = Column(String, primary_key=True)  # listing | user
+    item_id = Column(Integer, primary_key=True)
+    lang = Column(String, primary_key=True)  # es | hi
+    src_hash = Column(String, nullable=False)
+    data = Column(Text, nullable=False)  # JSON {field: text}

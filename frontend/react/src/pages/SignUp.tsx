@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { useCommunities } from '../context/CommunityContext'
+import { t } from '../i18n'
 
 export default function SignUp() {
   const [name, setName] = useState('')
@@ -23,7 +24,7 @@ export default function SignUp() {
       if (town.trim()) setHome(town.trim())
       navigate('/profile/edit')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong.')
+      setError(err instanceof Error ? err.message : t('signIn.somethingWentWrong'))
     } finally {
       setSubmitting(false)
     }
@@ -32,24 +33,23 @@ export default function SignUp() {
   return (
     <div className="auth-layout">
       <div className="auth-pitch">
-        <h2>Why Banyan?</h2>
+        <h2>{t('signUp.whyBanyan')}</h2>
         <p>
-          Every village has a pump set sitting idle, a roll of drip pipe left over, someone who can fix a tractor or
-          stitch a blouse. Banyan helps them find the neighbour - or the next town - that needs them.
+          {t('signUp.pitch')}
         </p>
         <ul>
-          <li>Lend, swap, give or sell - you choose</li>
-          <li>Post a job or ask for help, not just things</li>
-          <li>Built for slow connections: text first, photos only when you tap</li>
+          <li>{t('signUp.chooseExchange')}</li>
+          <li>{t('signUp.postJobOrAsk')}</li>
+          <li>{t('signUp.builtForSlow')}</li>
         </ul>
       </div>
 
       <section className="auth-panel">
-        <h1>Join Banyan</h1>
+        <h1>{t('signUp.joinBanyan')}</h1>
 
         <form onSubmit={handleSubmit}>
           <div className="form-field">
-            <label htmlFor="signup-name">Name</label>
+            <label htmlFor="signup-name">{t('signUp.name')}</label>
             <input
               id="signup-name"
               type="text"
@@ -62,7 +62,7 @@ export default function SignUp() {
           </div>
 
           <div className="form-field">
-            <label htmlFor="signup-email">Email</label>
+            <label htmlFor="signup-email">{t('signUp.email')}</label>
             <input
               id="signup-email"
               type="email"
@@ -71,11 +71,11 @@ export default function SignUp() {
               onChange={(event) => setEmail(event.target.value)}
               autoComplete="email"
             />
-            <span className="field-hint">For signing in only - never shown to others.</span>
+            <span className="field-hint">{t('signUp.emailHint')}</span>
           </div>
 
           <div className="form-field">
-            <label htmlFor="signup-password">Password</label>
+            <label htmlFor="signup-password">{t('signUp.password')}</label>
             <input
               id="signup-password"
               type="password"
@@ -86,11 +86,11 @@ export default function SignUp() {
               onChange={(event) => setPassword(event.target.value)}
               autoComplete="new-password"
             />
-            <span className="field-hint">At least 8 characters.</span>
+            <span className="field-hint">{t('signUp.passwordHint')}</span>
           </div>
 
           <div className="form-field">
-            <label htmlFor="signup-town">Your town</label>
+            <label htmlFor="signup-town">{t('signUp.yourTown')}</label>
             <input
               id="signup-town"
               list="signup-towns"
@@ -112,12 +112,12 @@ export default function SignUp() {
           )}
 
           <button type="submit" className="primary-button" disabled={submitting}>
-            {submitting ? 'Creating account...' : 'Join'}
+            {submitting ? t('signUp.creatingAccount') : t('signUp.join')}
           </button>
         </form>
 
         <p className="auth-switch">
-          Already a member? <Link to="/signin">Sign in</Link>
+          {t('signUp.alreadyMember')} <Link to="/signin">{t('signUp.signIn')}</Link>
         </p>
       </section>
     </div>

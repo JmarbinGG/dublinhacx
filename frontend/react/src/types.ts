@@ -1,9 +1,10 @@
 /** Mirrors backend/schemas.py - the API contract. */
+import { t } from './i18n'
 
 export const LISTING_TYPES = [
-  { id: 'material', label: 'Materials', blurb: 'Spare bricks, pipe, seed, fabric, timber' },
-  { id: 'equipment', label: 'Equipment & tools', blurb: 'Pump sets, sprayers, tillers, ladders' },
-  { id: 'skill', label: 'Skills & jobs', blurb: 'Repairs, tailoring, teaching, farm work' },
+  { id: 'material', get label() { return t('type.material') }, get blurb() { return t('type.material.blurb') } },
+  { id: 'equipment', get label() { return t('type.equipment') }, get blurb() { return t('type.equipment.blurb') } },
+  { id: 'skill', get label() { return t('type.skill') }, get blurb() { return t('type.skill.blurb') } },
 ] as const
 
 export type ListingType = (typeof LISTING_TYPES)[number]['id']
@@ -12,20 +13,20 @@ export type ExchangeType = 'free' | 'lend' | 'trade' | 'paid'
 export type ListingStatus = 'available' | 'pending' | 'closed'
 
 export const EXCHANGES: { id: ExchangeType; label: string }[] = [
-  { id: 'free', label: 'Free' },
-  { id: 'lend', label: 'Lend' },
-  { id: 'trade', label: 'Trade' },
-  { id: 'paid', label: 'Paid' },
+  { id: 'free', get label() { return t('exchange.free') } },
+  { id: 'lend', get label() { return t('exchange.lend') } },
+  { id: 'trade', get label() { return t('exchange.trade') } },
+  { id: 'paid', get label() { return t('exchange.paid') } },
 ]
 
 export const STATUSES: { id: ListingStatus; label: string }[] = [
-  { id: 'available', label: 'Available' },
-  { id: 'pending', label: 'Pending' },
-  { id: 'closed', label: 'Closed' },
+  { id: 'available', get label() { return t('status.available') } },
+  { id: 'pending', get label() { return t('status.pending') } },
+  { id: 'closed', get label() { return t('status.closed') } },
 ]
 
 export function typeLabel(type: string): string {
-  return LISTING_TYPES.find((t) => t.id === type)?.label ?? type
+  return LISTING_TYPES.find((lt) => lt.id === type)?.label ?? type
 }
 
 export function exchangeLabel(exchange: string): string {
@@ -34,8 +35,8 @@ export function exchangeLabel(exchange: string): string {
 
 /** "Offering" / "Wanted" - a job posting is a skill request. */
 export function kindLabel(listing: Pick<Listing, 'type' | 'kind'>): string {
-  if (listing.kind === 'request') return listing.type === 'skill' ? 'Help wanted' : 'Wanted'
-  return 'Offering'
+  if (listing.kind === 'request') return listing.type === 'skill' ? t('kind.helpWanted') : t('kind.wanted')
+  return t('kind.offering')
 }
 
 export type UserSummary = {

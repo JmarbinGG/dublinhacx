@@ -1,18 +1,19 @@
 import type { ListingQuery } from '../api/listings'
 import { NEARBY_KM } from '../context/CommunityContext'
 import type { Point } from './geo'
+import { t } from '../i18n'
 import { EXCHANGES, LISTING_TYPES, type ExchangeType, type Listing, type ListingKind, type ListingType } from '../types'
 
 export const SCOPES = [
-  { id: 'all', label: 'Everywhere' },
-  { id: 'town', label: 'My town' },
-  { id: 'others', label: 'Other towns' },
-  { id: 'near', label: `Within ${NEARBY_KM} km` },
+  { id: 'all', get label() { return t('scope.all') } },
+  { id: 'town', get label() { return t('scope.town') } },
+  { id: 'others', get label() { return t('scope.others') } },
+  { id: 'near', get label() { return t('scope.near', { km: NEARBY_KM }) } },
 ] as const
 
 export const SORTS = [
-  { id: 'newest', label: 'Newest first' },
-  { id: 'nearest', label: 'Nearest first' },
+  { id: 'newest', get label() { return t('sort.newest') } },
+  { id: 'nearest', get label() { return t('sort.nearest') } },
 ] as const
 
 export type Scope = (typeof SCOPES)[number]['id']

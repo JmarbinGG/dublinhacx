@@ -3,6 +3,7 @@ import { useAuth } from '../auth/AuthContext'
 import { useOnline } from '../hooks/useOnline'
 import { QUEUE_CHANGED_EVENT, flushQueue, readQueue } from '../offline/syncQueue'
 import Icon from './Icon'
+import { t, tn } from '../i18n'
 
 const pendingCount = () => readQueue().filter((entry) => !entry.error).length
 
@@ -33,14 +34,14 @@ export default function ConnectionStatus() {
     }
   }, [online, token, pending])
 
-  const plural = (n: number) => `${n} listing${n === 1 ? '' : 's'}`
+  const plural = (n: number) => tn('conn.listings', n)
 
   if (!online) {
     return (
       <div className="banner banner--warn" role="status">
         <Icon name="offline" />
-        You're offline - showing saved listings.
-        {pending > 0 && ` ${plural(pending)} will post when you reconnect.`}
+        {t('conn.offline')}
+        {pending > 0 && ` ${t('conn.willPost', { listings: plural(pending) })}`}
       </div>
     )
   }
@@ -49,7 +50,7 @@ export default function ConnectionStatus() {
     return (
       <div className="banner" role="status">
         <Icon name="alert" />
-        {plural(pending)} waiting to post - sign in to send them.
+        {t('conn.waiting', { listings: plural(pending) })}
       </div>
     )
   }
@@ -58,9 +59,9 @@ export default function ConnectionStatus() {
     return (
       <div className="banner banner--ok" role="status">
         <Icon name="check" />
-        Back online - posted {plural(justSynced)} saved while offline.
+        {t('conn.synced', { listings: plural(justSynced) })}
         <button type="button" className="link-button" onClick={() => setJustSynced(0)}>
-          Dismiss
+          {t('conn.dismiss')}
         </button>
       </div>
     )

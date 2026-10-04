@@ -9,6 +9,8 @@ import { useOnline } from '../../hooks/useOnline'
 import { flipFrom } from '../../lib/motion'
 import Icon from '../Icon'
 import { kindLabel, typeLabel, type Listing } from '../../types'
+import { t } from '../../i18n'
+import Trans from '../../i18n/Trans'
 
 /** Listings the assistant pointed to, fetched by id from our own API. Ids
  * that don't exist are silently dropped, so the model can't invent any. */
@@ -33,7 +35,7 @@ function SuggestedListings({ ids }: { ids: number[] }) {
     return () => controller.abort()
   }, [ids])
 
-  if (!listings) return <p className="chat__hint">Loading listings...</p>
+  if (!listings) return <p className="chat__hint">{t('chat.loadingListings')}</p>
   if (listings.length === 0) return null
   return (
     <ul className="chat__listings">
@@ -67,7 +69,7 @@ function Message({ message, onChip, disabled }: { message: ChatMessage; onChip: 
               ))}
             </div>
           )}
-          <span className="chat__label">AI-generated, may be wrong{message.demo ? ' · demo' : ''}</span>
+          <span className="chat__label">{t('chat.aiLabel')}{message.demo ? ` · ${t('chat.demo')}` : ''}</span>
         </>
       )}
     </li>
@@ -115,15 +117,15 @@ function AssistantPanel({ origin, onClose }: PanelProps) {
   }
 
   return (
-    <section className="chat" role="dialog" aria-label="Banyan assistant" ref={panelRef}>
+    <section className="chat" role="dialog" aria-label={t('chat.dialog')} ref={panelRef}>
       <header className="chat__header">
-        <strong>Ask Banyan</strong>
-        <span className="chat__sub">Tell me what you need - I'll find who has it.</span>
+        <strong>{t('chat.title')}</strong>
+        <span className="chat__sub">{t('chat.sub')}</span>
         <div className="chat__actions">
           <button type="button" className="link-button" onClick={assistant.reset}>
-            New chat
+            {t('chat.new')}
           </button>
-          <button type="button" className="icon-button" onClick={onClose} aria-label="Close assistant">
+          <button type="button" className="icon-button" onClick={onClose} aria-label={t('chat.close')}>
             <Icon name="x" />
           </button>
         </div>
@@ -132,7 +134,7 @@ function AssistantPanel({ origin, onClose }: PanelProps) {
       <ul className="chat__messages" ref={listRef} aria-live="polite">
         {assistant.messages.length === 0 && (
           <li className="chat__notice">
-            Try "I need a pump set for two days" or "someone to fix a sewing machine".
+            {t('chat.try')}
           </li>
         )}
         {assistant.messages.map((message) => (
@@ -140,9 +142,9 @@ function AssistantPanel({ origin, onClose }: PanelProps) {
         ))}
         {assistant.pending && (
           <li className="chat__notice">
-            Thinking...{' '}
+            {t('chat.thinking')}{' '}
             <button type="button" className="link-button" onClick={assistant.cancel}>
-              Stop
+              {t('chat.stop')}
             </button>
           </li>
         )}
@@ -150,27 +152,33 @@ function AssistantPanel({ origin, onClose }: PanelProps) {
 
       {assistant.failedTurns >= 2 && (
         <div className="chat__handoff">
-          Not finding it?{' '}
-          <Link to="/search" onClick={onClose}>
-            Browse listings
-          </Link>{' '}
-          or{' '}
-          <button type="button" className="link-button" onClick={() => assistant.report('Assistant could not help')}>
-            report a problem
-          </button>
-          .
+          <Trans
+            k="chat.handoff"
+            tags={{
+              browse: (text) => (
+                <Link to="/search" onClick={onClose}>
+                  {text}
+                </Link>
+              ),
+              report: (text) => (
+                <button type="button" className="link-button" onClick={() => assistant.report('Assistant could not help')}>
+                  {text}
+                </button>
+              ),
+            }}
+          />
         </div>
       )}
 
       {assistant.unsent && (
         <div className="chat__unsent" role="status">
-          Not sent yet: "{assistant.unsent}"
+          {t('chat.notSent', { text: assistant.unsent })}
           <div>
             <button type="button" className="secondary-button" disabled={!online} onClick={assistant.sendUnsent}>
-              {online ? 'Send now' : 'Waiting for connection'}
+              {online ? t('chat.sendNow') : t('chat.waiting')}
             </button>
             <button type="button" className="link-button" onClick={assistant.discardUnsent}>
-              Discard
+              {t('chat.discard')}
             </button>
           </div>
         </div>
@@ -188,16 +196,16 @@ function AssistantPanel({ origin, onClose }: PanelProps) {
           value={draft}
           maxLength={AI_TEXT_LIMIT}
           onChange={(event) => setDraft(event.target.value)}
-          placeholder={online ? 'What are you looking for?' : 'Offline - type now, send later'}
-          aria-label="Message the assistant"
+          placeholder={online ? t('chat.placeholder') : t('chat.placeholderOffline')}
+          aria-label={t('chat.inputLabel')}
           disabled={assistant.pending}
         />
         <button type="submit" className="primary-button" disabled={busy || !draft.trim()}>
-          Send
+          {t('chat.send')}
         </button>
       </form>
       <p className="chat__footnote">
-        {draft.length}/{AI_TEXT_LIMIT} · Never share phone numbers or addresses here.
+        {draft.length}/{AI_TEXT_LIMIT} · {t('chat.privacy')}
       </p>
     </section>
   )

@@ -1,41 +1,35 @@
+import { t } from '../i18n'
+
 export default function About() {
   return (
     <section className="prose">
-      <h1>About Banyan</h1>
-      <p>
-        The banyan tree is where a village gathers. Its branches send down roots that become new trunks, until one
-        tree is a small forest. Banyan works the same way: each town is its own centre, and all of them are
-        connected.
-      </p>
+      <h1>{t('about.title')}</h1>
+      <p>{t('about.intro')}</p>
 
-      <h2>What people share</h2>
+      <h2>{t('about.shareTitle')}</h2>
       <ul>
         <li>
-          <strong>Materials</strong> - leftover bricks, drip pipe, seed, fabric, timber
+          <strong>{t('group.materials')}</strong> - {t('about.materials')}
         </li>
         <li>
-          <strong>Equipment and tools</strong> - pump sets, sprayers, tillers, ladders, sewing machines
+          <strong>{t('about.equipmentTitle')}</strong> - {t('about.equipment')}
         </li>
         <li>
-          <strong>Skills and jobs</strong> - tractor repair, tailoring, rooftop solar fitting, tuition, harvest help
+          <strong>{t('about.skillsTitle')}</strong> - {t('about.skills')}
         </li>
       </ul>
-      <p>Lend it, swap it, give it away or charge for it. Or post what you need and let someone offer.</p>
+      <p>{t('about.exchange')}</p>
 
-      <h2>Built for slow, capped connections</h2>
+      <h2>{t('about.slowTitle')}</h2>
       <ul>
-        <li>Listings are text first and load quickly</li>
-        <li>Photos never load on their own - each shows its size, and you tap to load it</li>
-        <li>A monthly data budget keeps track of what photos and AI answers have cost</li>
-        <li>The last listings you saw stay readable offline, and posts made offline send later</li>
+        <li>{t('about.slow1')}</li>
+        <li>{t('about.slow2')}</li>
+        <li>{t('about.slow3')}</li>
+        <li>{t('about.slow4')}</li>
       </ul>
 
-      <h2>AI, carefully</h2>
-      <p>
-        "Ask AI" and the assistant help you find the right listing or person. They only point to real listings,
-        every answer is marked as AI-generated, and regular search always works without them. You can switch them
-        off on the Data saver page.
-      </p>
+      <h2>{t('about.aiTitle')}</h2>
+      <p>{t('about.ai')}</p>
     </section>
   )
 }

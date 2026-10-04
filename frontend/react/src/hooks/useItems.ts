@@ -6,6 +6,7 @@ import type { Cached } from '../api/offlineCache'
 import { search } from '../api/search'
 import { getProfile, listUsers } from '../api/users'
 import type { ListingType } from '../types'
+import { t } from '../i18n'
 
 export type AsyncState<T> = {
   data: T | null
@@ -46,7 +47,7 @@ export function useFetch<T>(
         setState({
           data: null,
           loading: false,
-          error: error instanceof Error ? error.message : 'Something went wrong.',
+          error: error instanceof Error ? error.message : t('useItems.somethingWentWrong'),
           cachedAt: null,
         })
       })

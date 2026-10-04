@@ -1,3 +1,5 @@
+import { formatNumber, t } from '../i18n'
+
 export type Point = { lat: number; lng: number }
 
 const EARTH_RADIUS_KM = 6371
@@ -14,10 +16,11 @@ export function distanceKm(a: Point, b: Point): number {
 /** "3d ago" style - short enough for a card footer. */
 export function timeAgo(iso: string): string {
   const seconds = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000)
-  if (seconds < 3600) return `${Math.max(1, Math.round(seconds / 60))}m ago`
-  if (seconds < 86400) return `${Math.round(seconds / 3600)}h ago`
+  const n = (v: number) => formatNumber(v)
+  if (seconds < 3600) return t('time.m', { n: n(Math.max(1, Math.round(seconds / 60))) })
+  if (seconds < 86400) return t('time.h', { n: n(Math.round(seconds / 3600)) })
   const days = Math.round(seconds / 86400)
-  return days < 60 ? `${days}d ago` : `${Math.round(days / 30)}mo ago`
+  return days < 60 ? t('time.d', { n: n(days) }) : t('time.mo', { n: n(Math.round(days / 30)) })
 }
 
 /** Random id that also works on plain-http LAN origins, where

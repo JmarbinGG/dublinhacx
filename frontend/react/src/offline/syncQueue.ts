@@ -1,6 +1,7 @@
 import { isNetworkError } from '../api/client'
 import { createListing, type ListingInput } from '../api/listings'
 import { randomId } from '../lib/geo'
+import { t } from '../i18n'
 
 /**
  * Listings created with no connection wait here (localStorage) and are
@@ -63,7 +64,7 @@ export async function flushQueue(token: string): Promise<number> {
         writeQueue(
           readQueue().map((e) =>
             e.client_id === entry.client_id
-              ? { ...e, error: error instanceof Error ? error.message : 'Rejected' }
+              ? { ...e, error: error instanceof Error ? error.message : t('syncQueue.rejected') }
               : e,
           ),
         )

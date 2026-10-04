@@ -2,10 +2,7 @@
  * The user's language preference, chosen after "Get started" (and in the
  * avatar menu). Stored per device.
  *
- * Note: this does NOT set <html lang> yet. The UI is still English-only, and
- * declaring lang="hi" on English text would make screen readers read English
- * with a Hindi voice. Once translations ship (frontend/react/I18N_PLAN.md),
- * the chosen language drives both the strings and <html lang>.
+ * i18n/index.ts loads the chosen language's strings and sets <html lang>.
  */
 export const LANGS = [
   { id: 'en', native: 'English', english: 'English' },

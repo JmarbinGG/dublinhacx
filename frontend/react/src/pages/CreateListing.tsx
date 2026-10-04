@@ -10,6 +10,7 @@ import { TOPICS, isTopic } from '../lib/categories'
 import { ImageRejectedError, prepareImage } from '../lib/image'
 import { enqueueListing } from '../offline/syncQueue'
 import { EXCHANGES, LISTING_TYPES, type ExchangeType, type ListingKind, type ListingType } from '../types'
+import { t } from '../i18n'
 
 function splitTags(text: string): string[] {
   return [...new Set(text.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean))].slice(0, 10)
@@ -89,10 +90,10 @@ export default function CreateListing() {
         err instanceof ImageRejectedError
           ? err.message
           : isNetworkError(err)
-            ? "Photos can't upload while offline - you can still post without one."
+            ? t('createListing.photoOffline')
             : err instanceof Error
               ? err.message
-              : 'Could not upload this photo.',
+              : t('createListing.couldNotUpload'),
       )
     } finally {
       if (requestId === uploadId.current) setUploading(false)
@@ -127,7 +128,7 @@ export default function CreateListing() {
         navigate(`/users/${user?.id}`, { state: { queued: true } })
         return
       }
-      setError(err instanceof Error ? err.message : 'Something went wrong.')
+      setError(err instanceof Error ? err.message : t('createListing.somethingWentWrong'))
     } finally {
       setSubmitting(false)
     }
@@ -136,31 +137,31 @@ export default function CreateListing() {
   if (!user) {
     return (
       <section className="auth-panel create-listing-panel">
-        <h1>Share something</h1>
+        <h1>{t('createListing.shareSomething')}</h1>
         <div className="state">
-          <p>Sign in to share or ask for something.</p>
+          <p>{t('createListing.signInToShare')}</p>
           <Link to="/signin" className="primary-button">
-            Sign in
+            {t('createListing.signIn')}
           </Link>
         </div>
       </section>
     )
   }
 
-  if (editing && existing.loading && !existing.data) return <Loading label="Loading listing..." />
+  if (editing && existing.loading && !existing.data) return <Loading label={t('createListing.loadingListing')} />
   if (editing && existing.data && existing.data.owner.id !== user.id) {
-    return <p className="state state--error">You can only edit your own listings.</p>
+    return <p className="state state--error">{t('createListing.onlyOwnListings')}</p>
   }
 
   const shownImage = preview ?? resolveImageUrl(image)
 
   return (
     <section className="auth-panel create-listing-panel">
-      <h1>{editing ? 'Edit listing' : 'Share something'}</h1>
+      <h1>{editing ? t('createListing.editListing') : t('createListing.shareSomething')}</h1>
 
       <form onSubmit={handleSubmit}>
         <fieldset className="form-field">
-          <legend>What is it?</legend>
+          <legend>{t('createListing.whatIsIt')}</legend>
           <div className="chips">
             {LISTING_TYPES.map((t) => (
               <button
@@ -177,7 +178,7 @@ export default function CreateListing() {
         </fieldset>
 
         <fieldset className="form-field">
-          <legend>Are you offering it, or looking for it?</legend>
+          <legend>{t('createListing.offeringOrLooking')}</legend>
           <div className="chips">
             <button
               type="button"
@@ -185,7 +186,7 @@ export default function CreateListing() {
               aria-pressed={kind === 'offer'}
               onClick={() => setKind('offer')}
             >
-              I'm offering
+              {t('createListing.imOffering')}
             </button>
             <button
               type="button"
@@ -193,31 +194,31 @@ export default function CreateListing() {
               aria-pressed={kind === 'request'}
               onClick={() => setKind('request')}
             >
-              {type === 'skill' ? 'I need help / hiring' : "I'm looking for it"}
+              {type === 'skill' ? t('createListing.iNeedHelp') : t('createListing.imLookingFor')}
             </button>
           </div>
         </fieldset>
 
         <div className="form-field">
-          <label htmlFor="listing-title">Title</label>
+          <label htmlFor="listing-title">{t('createListing.title')}</label>
           <input
             id="listing-title"
             type="text"
             required
             maxLength={120}
-            placeholder={type === 'skill' ? 'e.g. Tailoring and alterations' : 'e.g. Diesel pump set, 5 hp'}
+            placeholder={type === 'skill' ? t('createListing.titlePlaceholderSkill') : t('createListing.titlePlaceholder')}
             value={title}
             onChange={(event) => setTitle(event.target.value)}
           />
         </div>
 
         <div className="form-field">
-          <label htmlFor="listing-description">Short description</label>
+          <label htmlFor="listing-description">{t('createListing.shortDescription')}</label>
           <textarea
             id="listing-description"
             rows={3}
             maxLength={4000}
-            placeholder="Condition, when it's available, where to collect."
+            placeholder={t('createListing.descriptionPlaceholder')}
             value={description}
             onChange={(event) => setDescription(event.target.value)}
           />
@@ -225,7 +226,7 @@ export default function CreateListing() {
 
         <div className="form-row">
           <div className="form-field">
-            <label htmlFor="listing-exchange">Exchange</label>
+            <label htmlFor="listing-exchange">{t('createListing.exchange')}</label>
             <select id="listing-exchange" value={exchange} onChange={(e) => setExchange(e.target.value as ExchangeType)}>
               {EXCHANGES.map((ex) => (
                 <option key={ex.id} value={ex.id}>
@@ -235,12 +236,12 @@ export default function CreateListing() {
             </select>
           </div>
           <div className="form-field">
-            <label htmlFor="listing-price">Terms (optional)</label>
+            <label htmlFor="listing-price">{t('createListing.terms')}</label>
             <input
               id="listing-price"
               type="text"
               maxLength={60}
-              placeholder="per day, or swap for vegetables"
+              placeholder={t('createListing.pricePlaceholder')}
               value={price}
               onChange={(event) => setPrice(event.target.value)}
             />
@@ -249,11 +250,11 @@ export default function CreateListing() {
 
         <div className="form-row">
           <div className="form-field">
-            <label htmlFor="listing-category">Category</label>
+            <label htmlFor="listing-category">{t('createListing.category')}</label>
             {/* The backend's fixed list - we send the id. */}
             <select id="listing-category" required value={category} onChange={(event) => setCategory(event.target.value)}>
               <option value="" disabled>
-                Choose...
+                {t('createListing.choose')}
               </option>
               {TOPICS.map((t) => (
                 <option key={t.id} value={t.id}>
@@ -263,12 +264,12 @@ export default function CreateListing() {
             </select>
           </div>
           <div className="form-field">
-            <label htmlFor="listing-quantity">Quantity</label>
+            <label htmlFor="listing-quantity">{t('createListing.quantity')}</label>
             <input
               id="listing-quantity"
               type="text"
               maxLength={60}
-              placeholder="e.g. 40 metres"
+              placeholder={t('createListing.quantityPlaceholder')}
               value={quantity}
               onChange={(event) => setQuantity(event.target.value)}
             />
@@ -276,24 +277,24 @@ export default function CreateListing() {
         </div>
 
         <div className="form-field">
-          <label htmlFor="listing-tags">Tags</label>
+          <label htmlFor="listing-tags">{t('createListing.tags')}</label>
           <input
             id="listing-tags"
             type="text"
             maxLength={200}
-            placeholder="pump, water, borewell"
+            placeholder={t('createListing.tagsPlaceholder')}
             value={tags}
             onChange={(event) => setTags(event.target.value)}
           />
-          <span className="field-hint">Comma-separated. Helps people find it.</span>
+          <span className="field-hint">{t('createListing.tagsHint')}</span>
         </div>
 
         <div className="form-field">
-          <label htmlFor="listing-image">Photo (optional)</label>
+          <label htmlFor="listing-image">{t('createListing.photo')}</label>
           <div className="file-input">
             <input id="listing-image" type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={handlePhoto} />
             <label htmlFor="listing-image" className="secondary-button file-input__button">
-              Choose photo
+              {t('createListing.choosePhoto')}
             </label>
             <input
               id="listing-photo-capture"
@@ -303,12 +304,12 @@ export default function CreateListing() {
               onChange={handlePhoto}
             />
             <label htmlFor="listing-photo-capture" className="secondary-button file-input__button">
-              Take photo
+              {t('createListing.takePhoto')}
             </label>
             {shownImage ? (
               <>
                 <img src={shownImage} alt="" className="file-input__preview" />
-                {photoKb && <span className="file-input__hint">Shrunk to {formatKb(photoKb)}</span>}
+                {photoKb && <span className="file-input__hint">{t('createListing.shrunkTo', { size: formatKb(photoKb) })}</span>}
                 <button
                   type="button"
                   className="link-button"
@@ -319,16 +320,16 @@ export default function CreateListing() {
                     setPhotoKb(null)
                   }}
                 >
-                  Remove
+                  {t('createListing.remove')}
                 </button>
               </>
             ) : (
-              <span className="file-input__hint">No photo - text-only listings load fastest</span>
+              <span className="file-input__hint">{t('createListing.noPhotoHint')}</span>
             )}
           </div>
           {uploading && (
             <p className="photo-status" role="status">
-              Shrinking and uploading...
+              {t('createListing.shrinkingAndUploading')}
             </p>
           )}
           {photoError && (
@@ -345,7 +346,7 @@ export default function CreateListing() {
         )}
 
         <button type="submit" className="primary-button" disabled={submitting || uploading}>
-          {submitting ? 'Saving...' : editing ? 'Save changes' : 'Post'}
+          {submitting ? t('createListing.saving') : editing ? t('createListing.saveChanges') : t('createListing.post')}
         </button>
       </form>
     </section>

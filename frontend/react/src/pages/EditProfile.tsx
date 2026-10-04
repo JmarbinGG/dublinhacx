@@ -7,6 +7,7 @@ import { useAuth } from '../auth/AuthContext'
 import { useCommunities } from '../context/CommunityContext'
 import { formatKb } from '../context/DataBudgetContext'
 import { ImageRejectedError, prepareImage } from '../lib/image'
+import { t } from '../i18n'
 
 const BIO_MAX = 280
 
@@ -32,9 +33,9 @@ export default function EditProfile() {
   if (!user || !token) {
     return (
       <section className="auth-panel">
-        <h1>Edit profile</h1>
+        <h1>{t('editProfile.title')}</h1>
         <p className="state">
-          <Link to="/signin">Sign in</Link> to edit your profile.
+          <Link to="/signin">{t('editProfile.signInToEdit')}</Link>
         </p>
       </section>
     )
@@ -56,10 +57,10 @@ export default function EditProfile() {
         err instanceof ImageRejectedError
           ? err.message
           : isNetworkError(err)
-            ? "You're offline - try the photo again later."
+            ? t('editProfile.offlinePhoto')
             : err instanceof Error
               ? err.message
-              : 'Could not upload.',
+              : t('editProfile.couldNotUpload'),
       )
     } finally {
       setBusy(false)
@@ -68,7 +69,7 @@ export default function EditProfile() {
 
   function locateMe() {
     if (!navigator.geolocation) {
-      setError("This device can't share its location.")
+      setError(t('editProfile.noGeolocation'))
       return
     }
     setLocating(true)
@@ -82,7 +83,7 @@ export default function EditProfile() {
         setLocating(false)
       },
       () => {
-        setError("Couldn't get your location.")
+        setError(t('editProfile.couldNotGetLocation'))
         setLocating(false)
       },
       { enableHighAccuracy: false, timeout: 15_000 },
@@ -111,7 +112,7 @@ export default function EditProfile() {
       if (updated.community) setHome(updated.community)
       navigate(`/users/${updated.id}`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save.')
+      setError(err instanceof Error ? err.message : t('editProfile.couldNotSave'))
     } finally {
       setBusy(false)
     }
@@ -121,37 +122,37 @@ export default function EditProfile() {
 
   return (
     <section className="auth-panel create-listing-panel">
-      <h1>Edit profile</h1>
+      <h1>{t('editProfile.title')}</h1>
       <form onSubmit={handleSubmit}>
         <div className="form-field">
-          <label htmlFor="profile-photo">Photo</label>
+          <label htmlFor="profile-photo">{t('editProfile.photo')}</label>
           <div className="file-input">
             <input id="profile-photo" type="file" accept="image/jpeg,image/png,image/webp" onChange={handlePhoto} />
             <label htmlFor="profile-photo" className="secondary-button file-input__button">
-              {photo ? 'Change photo' : 'Add photo'}
+              {photo ? t('editProfile.changePhoto') : t('editProfile.addPhoto')}
             </label>
             {photoUrl && <img src={photoUrl} alt="" className="file-input__preview" />}
-            {photoKb && <span className="file-input__hint">Shrunk to {formatKb(photoKb)}</span>}
+            {photoKb && <span className="file-input__hint">{t('editProfile.shrunkTo', { size: formatKb(photoKb) })}</span>}
             {photo && (
               <button type="button" className="link-button" onClick={() => setPhoto(null)}>
-                Remove
+                {t('editProfile.remove')}
               </button>
             )}
           </div>
         </div>
 
         <div className="form-field">
-          <label htmlFor="profile-name">Name</label>
+          <label htmlFor="profile-name">{t('editProfile.name')}</label>
           <input id="profile-name" required maxLength={80} value={name} onChange={(e) => setName(e.target.value)} />
         </div>
 
         <div className="form-field">
-          <label htmlFor="profile-bio">About you</label>
+          <label htmlFor="profile-bio">{t('editProfile.aboutYou')}</label>
           <textarea
             id="profile-bio"
             rows={3}
             maxLength={BIO_MAX}
-            placeholder="What you grow, make, fix or know."
+            placeholder={t('editProfile.bioPlaceholder')}
             value={bio}
             onChange={(e) => setBio(e.target.value)}
           />
@@ -162,7 +163,7 @@ export default function EditProfile() {
 
         <div className="form-row">
           <div className="form-field">
-            <label htmlFor="profile-town">Town</label>
+            <label htmlFor="profile-town">{t('editProfile.town')}</label>
             <input
               id="profile-town"
               list="town-list"
@@ -177,29 +178,29 @@ export default function EditProfile() {
             </datalist>
           </div>
           <div className="form-field">
-            <label htmlFor="profile-contact">Public contact</label>
+            <label htmlFor="profile-contact">{t('editProfile.publicContact')}</label>
             <input
               id="profile-contact"
               maxLength={200}
-              placeholder="Email, phone, or 'ask at the market'"
+              placeholder={t('editProfile.contactPlaceholder')}
               value={contact}
               onChange={(e) => setContact(e.target.value)}
             />
           </div>
         </div>
-        <p className="field-hint">Your contact is shown to anyone viewing your profile or listings. Your login email stays private.</p>
+        <p className="field-hint">{t('editProfile.contactHint')}</p>
 
         <div className="form-field">
-          <span className="form-label">Location (for distances)</span>
+          <span className="form-label">{t('editProfile.location')}</span>
           <div className="file-input">
             <button type="button" className="secondary-button" onClick={locateMe} disabled={locating}>
-              {locating ? 'Locating...' : coords ? 'Update my location' : 'Use my location'}
+              {locating ? t('editProfile.locating') : coords ? t('editProfile.updateLocation') : t('editProfile.useLocation')}
             </button>
             {coords && (
               <>
-                <span className="file-input__hint">Saved, rounded to about 100 m</span>
+                <span className="file-input__hint">{t('editProfile.locationSaved')}</span>
                 <button type="button" className="link-button" onClick={() => setCoords(null)}>
-                  Clear
+                  {t('editProfile.clear')}
                 </button>
               </>
             )}
@@ -212,7 +213,7 @@ export default function EditProfile() {
           </p>
         )}
         <button type="submit" className="primary-button" disabled={busy}>
-          {busy ? 'Saving...' : 'Save profile'}
+          {busy ? t('editProfile.saving') : t('editProfile.saveProfile')}
         </button>
       </form>
     </section>

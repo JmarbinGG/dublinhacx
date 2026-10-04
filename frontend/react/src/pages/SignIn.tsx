@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { t } from '../i18n'
 
 export default function SignIn() {
   const [email, setEmail] = useState('')
@@ -18,7 +19,7 @@ export default function SignIn() {
       await login(email.trim(), password)
       navigate('/app')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong.')
+      setError(err instanceof Error ? err.message : t('signIn.somethingWentWrong'))
     } finally {
       setSubmitting(false)
     }
@@ -27,21 +28,21 @@ export default function SignIn() {
   return (
     <div className="auth-layout">
       <div className="auth-pitch">
-        <h2>Welcome back.</h2>
-        <p>See what your town and the towns around it are sharing, or post something of your own.</p>
+        <h2>{t('signIn.welcomeBack')}</h2>
+        <p>{t('signIn.seeWhatYourTown')}</p>
         <ul>
-          <li>Find tools to borrow and materials to reuse</li>
-          <li>Offer a skill, or ask for help with a job</li>
-          <li>Post even when offline - it sends when you reconnect</li>
+          <li>{t('signIn.findTools')}</li>
+          <li>{t('signIn.offerSkill')}</li>
+          <li>{t('signIn.postEvenOffline')}</li>
         </ul>
       </div>
 
       <section className="auth-panel">
-        <h1>Sign in</h1>
+        <h1>{t('signIn.signIn')}</h1>
 
         <form onSubmit={handleSubmit}>
           <div className="form-field">
-            <label htmlFor="signin-email">Email</label>
+            <label htmlFor="signin-email">{t('signIn.email')}</label>
             <input
               id="signin-email"
               type="email"
@@ -53,7 +54,7 @@ export default function SignIn() {
           </div>
 
           <div className="form-field">
-            <label htmlFor="signin-password">Password</label>
+            <label htmlFor="signin-password">{t('signIn.password')}</label>
             <input
               id="signin-password"
               type="password"
@@ -71,12 +72,12 @@ export default function SignIn() {
           )}
 
           <button type="submit" className="primary-button" disabled={submitting}>
-            {submitting ? 'Signing in...' : 'Sign in'}
+            {submitting ? t('signIn.signingIn') : t('signIn.signIn')}
           </button>
         </form>
 
         <p className="auth-switch">
-          New here? <Link to="/signup">Join Banyan</Link>
+          {t('signIn.newHere')} <Link to="/signup">{t('signIn.joinBanyan')}</Link>
         </p>
       </section>
     </div>

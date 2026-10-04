@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useCommunities } from '../context/CommunityContext'
 import { groupOf } from '../lib/categories'
-import { exchangeLabel, type Listing } from '../types'
+import { STATUSES, exchangeLabel, type Listing } from '../types'
 import DataBudgetImage from './DataBudgetImage'
 import Icon from './Icon'
 
@@ -46,7 +46,7 @@ export default function RuralMarketCard({ listing, hideCategory, actions, note, 
       <p className="card__distance">
         <Icon name="pin" />
         {distance.text}
-        {listing.status !== 'available' && <span className="card__status"> · {listing.status}</span>}
+        {listing.status !== 'available' && <span className="card__status"> · {STATUSES.find((s) => s.id === listing.status)?.label ?? listing.status}</span>}
       </p>
       {actions && <div className="card__actions">{actions}</div>}
     </article>

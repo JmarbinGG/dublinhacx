@@ -4,6 +4,7 @@ import AssistantLauncher from './assistant/AssistantLauncher'
 import ConnectionStatus from './ConnectionStatus'
 import Footer from './Footer'
 import Navbar from './Navbar'
+import { t } from '../i18n'
 import { SkeletonGrid } from './States'
 
 /**
@@ -17,7 +18,7 @@ export default function AppLayout() {
   return (
     <div className="page">
       <a href="#main" className="skip-link">
-        Skip to content
+        {t('common.skip')}
       </a>
       <Navbar />
       <ConnectionStatus />

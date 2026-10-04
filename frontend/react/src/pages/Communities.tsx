@@ -4,12 +4,13 @@ import Stats from '../components/Stats'
 import { Loading } from '../components/States'
 import { useCommunities } from '../context/CommunityContext'
 import { distanceKm } from '../lib/geo'
+import { formatNumber, t, tn } from '../i18n'
 
 /** /communities - every town on Banyan, with members and open listings. */
 export default function Communities() {
   const { communities, loading, home, homePoint, pointOf } = useCommunities()
 
-  if (loading && communities.length === 0) return <Loading label="Loading towns..." />
+  if (loading && communities.length === 0) return <Loading label={t('towns.loading')} />
 
   const rows = communities.map((c) => {
     const point = pointOf(c.name)
@@ -18,7 +19,7 @@ export default function Communities() {
 
   return (
     <section className="stack">
-      <h1>Towns</h1>
+      <h1>{t('footer.towns')}</h1>
       <Stats />
       <HomePicker id="towns-home" />
       <ul className="town-list">
@@ -27,11 +28,11 @@ export default function Communities() {
             <Link to={`/communities/${encodeURIComponent(c.name)}`} className="town">
               <span className="town__name">
                 {c.name}
-                {c.name === home && <span className="tag">Your town</span>}
+                {c.name === home && <span className="tag">{t('town.yours')}</span>}
               </span>
               <span className="town__meta">
-                {c.listings} open · {c.members} {c.members === 1 ? 'neighbour' : 'neighbours'}
-                {c.km != null && ` · ${Math.round(c.km)} km`}
+                {t('towns.open', { n: formatNumber(c.listings) })} · {tn('towns.neighbours', c.members)}
+                {c.km != null && ` · ${t('towns.km', { km: formatNumber(Math.round(c.km)) })}`}
               </span>
             </Link>
           </li>

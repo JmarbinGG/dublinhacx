@@ -1,4 +1,5 @@
 import { useCommunities } from '../context/CommunityContext'
+import { t } from '../i18n'
 
 /** "Your town" select. Distances and the town / other-towns views use it. */
 export default function HomePicker({ id = 'home-community' }: { id?: string }) {
@@ -9,7 +10,7 @@ export default function HomePicker({ id = 'home-community' }: { id?: string }) {
 
   return (
     <label className="home-picker" htmlFor={id}>
-      <span className="home-picker__label">Your town</span>
+      <span className="home-picker__label">{t('town.yours')}</span>
       <select
         id={id}
         value={home ?? ''}
@@ -17,7 +18,7 @@ export default function HomePicker({ id = 'home-community' }: { id?: string }) {
         onChange={(event) => setHome(event.target.value)}
       >
         <option value="" disabled>
-          {loading ? 'Loading...' : 'Choose your town'}
+          {loading ? t('common.loading') : t('town.choose')}
         </option>
         {names.map((name) => (
           <option key={name} value={name}>

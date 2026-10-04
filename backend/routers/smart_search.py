@@ -46,6 +46,7 @@ from sqlalchemy.orm import Session as DbSession
 
 import categories
 import communities
+import i18n
 import llm
 import storage
 from auth import optional_user
@@ -684,7 +685,7 @@ def run_state(
         keep = mixed
 
     page = keep[offset : offset + limit]
-    cards = [
+    cards = [_translated(c, l) for c, l in zip([
         Card(
             id=l.id, title=l.title, type=l.type, kind=l.kind, exchange=l.exchange, price=l.price,
             quantity=l.quantity, community=l.owner.community,
@@ -693,8 +694,19 @@ def run_state(
             owner_name=l.owner.name, match=m if state.mode == "complex" else None,
         )
         for _, l, m in page
-    ]
+    ], [l for _, l, _ in page])]
     return cards, len(keep) > offset + limit
+
+
+def _translated(card: Card, listing: Listing) -> Card:
+    """Card text in the shopper's language (X-Lang). `match` stays as the
+    search term it was matched on."""
+    data = i18n.lookup("listing", listing.id, i18n.source_of("listing", listing))
+    if data:
+        for f in ("title", "quantity", "price"):
+            if getattr(card, f) and isinstance(data.get(f), str) and data[f].strip():
+                setattr(card, f, data[f])
+    return card
 
 
 def _clean_suggestions(items) -> list[Suggestion]:
@@ -792,9 +804,10 @@ def smart_search(
     models = _ModelBudget(request, user)
     new_or_refined = body.state is None or bool(body.refine and body.refine.strip())
     if body.state is None:
-        state, used = new_search(db, " ".join(body.q.split()), models)
+        # Spanish or Hindi: listings are in English, so search in English.
+        state, used = new_search(db, " ".join(i18n.to_english(db, body.q).split()), models)
     elif body.refine and body.refine.strip():
-        state, used = refine_search(body.state, body.refine, models)
+        state, used = refine_search(body.state, i18n.to_english(db, body.refine), models)
         if state.terms != body.state.terms:
             state = state.model_copy(update={"picked": None})  # new terms: judge relevance again
     else:
