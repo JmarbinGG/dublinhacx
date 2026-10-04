@@ -6,11 +6,10 @@ import { t } from '../i18n'
 /**
  * The one search bar: POST /api/search/smart (backend/routers/smart_search.py).
  *
- *   search      { q, community }                      - first search
- *   follow-up   { q, state: <previous>, community }   - the server decides
- *               whether the text is a new search or narrows the previous one
- *               ("only free ones", "closer than 20 km"); the client never does
- *   more        { state, offset }                     - no model call
+ *   new search  { q, community }
+ *   refine      { state, refine: "5", community }   - server parses the term
+ *   edit        { state }                            - e.g. a removed term or a filter
+ *   more        { state, offset }                    - no model call
  *
  * The server decides simple vs complex and keeps no session: `state` comes
  * back with every response and is sent back to refine or page, so a
@@ -34,17 +33,18 @@ export type SearchState = {
   kind?: string | null
   exchange?: string | null
   max_km?: number | null
-  /** One of the fixed category ids (lib/categories TOPICS). */
+  /** One of the fixed category ids (lib/categories TOPICS), set by a refine. */
   category?: string | null
-  /** Whether type/kind were inferred from the wording or said explicitly. */
-  type_source?: 'inferred' | 'explicit' | null
   need?: string | null
   refinements: string[]
 }
 
+export type Suggestion = { label: string; refine: string }
+
 export type SmartBody = {
   q?: string
   state?: SearchState
+  refine?: string
   community?: string | null
   limit?: number
   offset?: number
@@ -54,9 +54,7 @@ export type SmartPage = {
   mode: 'simple' | 'complex'
   ai: boolean
   state: SearchState
-  /** Server's short plain-text account of how it understood the search
-   * (e.g. "No skills found, showing everything"), when it sends one. */
-  summary: string | null
+  suggestions: Suggestion[]
   listings: Listing[]
   /** Per listing id: which interpreted term it matched (complex searches). */
   matches: Record<number, string>
@@ -134,8 +132,12 @@ function parse(raw: unknown): SmartPage {
       refinements: strings(state.refinements, 10, 100),
       need: isString(state.need) ? state.need.slice(0, 120) : null,
     },
-    // Plain text only, capped - shown as-is in a read-only line.
-    summary: isString(body.summary) && body.summary.trim() ? body.summary.trim().slice(0, 160) : null,
+    suggestions: Array.isArray(body.suggestions)
+      ? (body.suggestions as Suggestion[])
+          .filter((s) => s && isString(s.label) && isString(s.refine))
+          .map((s) => ({ label: s.label.slice(0, 40), refine: s.refine.slice(0, 100) }))
+          .slice(0, 5)
+      : [],
     listings: cards.map(fromCard),
     matches,
     has_more: body.has_more === true,
@@ -232,9 +234,10 @@ export async function smartStep(body: SmartBody, token: string | null, signal?: 
 const words = (text: string) => text.toLowerCase().split(/\s+/).filter(Boolean)
 const emptyState = (q: string): SearchState => ({ q, mode: 'simple', terms: [], attrs: [], refinements: [] })
 
-/** Plain keyword search on the old endpoint. */
+/** Plain keyword search on the old endpoint: refinements become extra words. */
 export async function plainFallback(
   q: string,
+  refinements: string[],
   offset: number,
   error: unknown,
   signal?: AbortSignal,
@@ -244,14 +247,14 @@ export async function plainFallback(
   if (!offline) {
     try {
       const res = await request<SearchResponse>('/api/search', {
-        params: { q, limit: SMART_PAGE, offset },
+        params: { q: [q, ...refinements].join(' '), limit: SMART_PAGE, offset },
         signal,
       })
       return {
         mode: 'simple',
         ai: false,
         state: emptyState(q),
-        summary: null,
+        suggestions: [],
         listings: res.listings,
         matches: {},
         has_more: res.listings.length >= SMART_PAGE,
@@ -269,7 +272,7 @@ export async function plainFallback(
 
   // Offline (or server unreachable): every word against listings saved on the device.
   const { rows, savedAt } = cachedListings<Listing>()
-  const needles = words(q)
+  const needles = words([q, ...refinements].join(' '))
   const hits = rows.filter((l) => {
     const hay = [l.title, l.description, l.category, l.quantity, l.price, l.exchange, l.owner?.community, ...(l.tags ?? [])]
       .join(' ')
@@ -280,7 +283,7 @@ export async function plainFallback(
     mode: 'simple',
     ai: false,
     state: emptyState(q),
-    summary: null,
+    suggestions: [],
     listings: hits.slice(offset, offset + SMART_PAGE),
     matches: {},
     has_more: hits.length > offset + SMART_PAGE,

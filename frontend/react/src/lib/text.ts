@@ -3,6 +3,7 @@
 
 export const AI_TEXT_LIMIT = 500
 export const QUERY_LIMIT = 200
+export const REFINE_LIMIT = 40
 
 /** Trim, collapse whitespace, cap length. The backend re-checks all of this. */
 export function cleanText(text: string, max: number): string {

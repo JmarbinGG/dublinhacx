@@ -1941,3 +1941,86 @@ textarea {
 :root[data-motion='off'] .logo-mark--draw path {
   stroke-dashoffset: 0;
 }
+
+/* Refine box: narrow a search down ("5", "small", "free"), with removable chips. */
+/* ---------- search: interpreted terms + refine ---------- */
+
+.interpreted,
+.refine__row,
+.refine__trail {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.refine {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.refine__trail {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-weight: 600;
+}
+
+/* "screws › 5 › small" */
+.refine__trail li + li::before {
+  content: '›';
+  margin-right: 6px;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.refine__trail li:last-child::before {
+  content: none;
+}
+
+.chip--removable {
+  gap: 4px;
+  padding-right: 4px;
+}
+
+.chip--removable button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: none;
+  border-radius: var(--radius);
+  color: var(--muted);
+  padding: 0;
+}
+
+.chip--removable button:hover {
+  background: var(--sunken);
+  color: var(--text);
+}
+
+.refine__form {
+  display: flex;
+  gap: 6px;
+  /* Its own full-width line, so "Narrow down in your own words, ..." fits. */
+  flex: 1 1 100%;
+  max-width: 640px;
+}
+
+.refine__form input {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.refine__form .secondary-button {
+  min-height: 36px;
+  padding: 4px 12px;
+}
