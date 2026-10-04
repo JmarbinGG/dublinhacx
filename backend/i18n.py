@@ -278,6 +278,10 @@ _FILTER_WORDS = {
     "नजदीक": "near", "अंदर": "within", "भीतर": "within", "किमी": "km", "किलोमीटर": "km", "बदले": "trade",
 }
 _glossary: dict[str, str] = {}
+_to_lang: dict[str, dict[str, str]] = {}
+_english: set[str] = set()  # words already in English (a tapped chip sends "free", "tools")
+_ENGLISH_EXTRA = {"only", "any", "price", "distance", "category", "tools", "within", "km", "free", "lend",
+                  "trade", "paid", "near", "nearby", "small", "large", "big"}
 _glossary_key = None
 _query_cache: dict[str, Optional[str]] = {}
 
@@ -295,16 +299,33 @@ def _build_glossary(db: DbSession) -> dict[str, str]:
     if key == _glossary_key:
         return _glossary
     gloss: dict[str, str] = {}
+    to_lang: dict[str, dict[str, str]] = {lang: {} for lang in LANGS}
     for l in db.query(Listing).all():
         src = source_of("listing", l)
         for lang in LANGS:
             data = (_cache.get(("listing", l.id, lang)) or {}).get("data") or {}
             for en, tr in zip(src["tags"], data.get("tags") or []):
                 gloss.setdefault(_norm(tr), en)
+                to_lang[lang].setdefault(_norm(en), tr)
             if data.get("title"):
                 gloss.setdefault(_norm(data["title"]), src["title"])
     _glossary, _glossary_key = gloss, key
+    _to_lang.clear()
+    _to_lang.update(to_lang)
+    _english.clear()
+    _english.update(w for v in list(gloss.values()) + list(_FILTER_WORDS.values()) for w in _norm(v).split())
+    _english.update(_ENGLISH_EXTRA)
     return gloss
+
+
+def term_in(db: DbSession, en: str, lang: Optional[str] = None) -> str:
+    """An English search term in the user's language, from the tag
+    translations ("axe" -> "कुल्हाड़ी"); unchanged if unknown."""
+    lang = lang or current_lang.get()
+    if lang not in LANGS:
+        return en
+    _build_glossary(db)
+    return _to_lang.get(lang, {}).get(_norm(en), en)
 
 
 def needs_english(text: str) -> bool:
@@ -328,9 +349,11 @@ def _from_glossary(db: DbSession, text: str) -> Optional[str]:
                 i += size
                 break
         else:
-            if words[i] not in stop and not (words[i].isascii() and words[i].isdigit()):
+            if words[i] in _english:
+                out.append(words[i])  # already English, e.g. from a tapped chip
+            elif words[i] not in stop and not (words[i].isascii() and words[i].isdigit()):
                 return None  # an unknown word: let the model translate the whole thing
-            if words[i].isdigit():
+            elif words[i].isdigit():
                 out.append(words[i])
             i += 1
     english = " ".join(out)

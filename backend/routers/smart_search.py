@@ -783,22 +783,38 @@ def _clean_suggestions(items) -> list[Suggestion]:
     return out[:3]
 
 
-def _suggestions(state: SearchState, origin: Optional[Community], empty: bool) -> list[Suggestion]:
+# Chip labels in the shopper's language (X-Lang). The `refine` text a chip
+# sends stays English - the rules read it either way.
+CHIP_LABELS = {
+    "en": {"any_exchange": "Any exchange", "any_distance": "Any distance", "any_category": "Any category",
+           "free": "Free only", "within": "Within {km} km", "only": "Only {term}", "tools": "Tools only"},
+    "es": {"any_exchange": "Cualquier intercambio", "any_distance": "Cualquier distancia",
+           "any_category": "Cualquier categoría", "free": "Solo gratis", "within": "A menos de {km} km",
+           "only": "Solo {term}", "tools": "Solo herramientas"},
+    "hi": {"any_exchange": "कोई भी लेन-देन", "any_distance": "कोई भी दूरी", "any_category": "कोई भी श्रेणी",
+           "free": "सिर्फ़ मुफ़्त", "within": "{km} किमी के अंदर", "only": "सिर्फ़ {term}", "tools": "सिर्फ़ औज़ार"},
+}
+
+
+def _suggestions(state: SearchState, origin: Optional[Community], empty: bool, db: Optional[DbSession] = None) -> list[Suggestion]:
+    lang = i18n.current_lang.get()
+    L = CHIP_LABELS.get(lang, CHIP_LABELS["en"])
+    term = (lambda t: i18n.term_in(db, t, lang)) if db is not None else (lambda t: t)
     out: list[Suggestion] = []
     if empty and state.exchange:
-        out.append(Suggestion(label="Any exchange", refine="any price"))
+        out.append(Suggestion(label=L["any_exchange"], refine="any price"))
     if empty and state.max_km:
-        out.append(Suggestion(label="Any distance", refine="any distance"))
+        out.append(Suggestion(label=L["any_distance"], refine="any distance"))
     if empty and state.category:
-        out.append(Suggestion(label="Any category", refine="any category"))
+        out.append(Suggestion(label=L["any_category"], refine="any category"))
     if not state.exchange:
-        out.append(Suggestion(label="Free only", refine="free"))
+        out.append(Suggestion(label=L["free"], refine="free"))
     if origin and not state.max_km:
-        out.append(Suggestion(label=f"Within {NEAR_KM} km", refine=f"within {NEAR_KM} km"))
+        out.append(Suggestion(label=L["within"].format(km=NEAR_KM), refine=f"within {NEAR_KM} km"))
     if state.mode == "complex" and len(state.terms) > 1 and not empty:
-        out = [Suggestion(label=f"Only {t}", refine=f"only {t}") for t in state.terms[:2]] + out
+        out = [Suggestion(label=L["only"].format(term=term(t)), refine=f"only {t}") for t in state.terms[:2]] + out
     elif state.type is None and state.mode == "simple":
-        out.append(Suggestion(label="Tools only", refine="tools"))
+        out.append(Suggestion(label=L["tools"], refine="tools"))
     return _clean_suggestions(out)
 
 
@@ -911,7 +927,7 @@ def smart_search(
         engine="ai" if used else "keyword",
         ai=used,
         state=state,
-        suggestions=_suggestions(state, origin, not cards),
+        suggestions=_suggestions(state, origin, not cards, db),
         results=cards,
         has_more=has_more,
     )

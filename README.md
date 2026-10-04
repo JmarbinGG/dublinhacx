@@ -71,8 +71,8 @@ npm run dev
 Without an API key everything still works except the AI features, which fall back to keyword
 search.
 
-**Demo account:** `peter.novak@example.com` / `password` (every seed account uses the
-password `password`).
+**Demo account:** `demo.user@example.com` / `password` (lives in Palm Grove, the town with
+the most listings; every seed account uses the password `password`).
 
 Host it on your own domain (after `cloudflared tunnel login` and creating a tunnel named
 `banyan`):
