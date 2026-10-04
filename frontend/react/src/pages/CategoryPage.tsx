@@ -9,7 +9,6 @@ import { filterExchange, readFilters, toListingQuery } from '../lib/filters'
 import { flipFrom } from '../lib/motion'
 import { takeTileRect } from '../lib/viewTransition'
 import NotFound from './NotFound'
-import { t } from '../i18n'
 
 const PAGE = 12
 
@@ -22,7 +21,7 @@ export default function CategoryPage() {
   const { group: groupId } = useParams()
   const group = groupById(groupId)
   const [params, setParams] = useSearchParams()
-  const filters = readFilters(params)
+  const filters = readFilters(new URLSearchParams()) // no filter controls here any more
   const { home, homePoint } = useCommunities()
   const topicParam = params.get('topic')
   const topic = isTopic(topicParam) ? topicParam : null
@@ -64,7 +63,7 @@ export default function CategoryPage() {
       <header className="cat-head">
         <div className="cat-head__backdrop" ref={backdropRef} aria-hidden="true" />
         <Link to="/app" className="back">
-          <Icon name="back" /> {t('categoryPage.allCategories')}
+          <Icon name="back" /> All categories
         </Link>
         <h1>
           <Icon name={group.icon} /> {group.label}
@@ -73,7 +72,7 @@ export default function CategoryPage() {
       </header>
 
       {topics.length > 1 && (
-        <div className="chip-row" role="group" aria-label={t('categoryPage.topics')}>
+        <div className="chip-row" role="group" aria-label="Topics">
           {topics.map(([id, count]) => (
             <button
               key={id}
@@ -88,21 +87,21 @@ export default function CategoryPage() {
         </div>
       )}
 
-      {res.cachedAt && <p className="notice notice--warn">{t('home.countsSaved', { ago: res.cachedAt })}</p>}
+      {res.cachedAt && <p className="notice notice--warn">Saved copy - you're offline.</p>}
 
-      <h2 className="visually-hidden">{t('categoryPage.listings')}</h2>
+      <h2 className="visually-hidden">Listings</h2>
       <ItemGrid
         listings={shown}
         loading={res.loading}
         error={res.error}
-        emptyMessage={t('categoryPage.noMatch', { category: group.label.toLowerCase() })}
+        emptyMessage={`No ${group.label.toLowerCase()} match these filters yet.`}
         onRetry={res.reload}
         hideCategory
       />
 
       {filtered && shown && filtered.length > shown.length && (
         <button type="button" className="secondary-button load-more" onClick={() => set('page', String(page + 1))}>
-          {t('categoryPage.showMore', { remaining: filtered.length - shown.length })}
+          Show more ({filtered.length - shown.length})
         </button>
       )}
     </section>

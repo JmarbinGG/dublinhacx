@@ -317,7 +317,7 @@ def parse_rules(text: str, initial: bool) -> tuple[dict, list[str]]:
         km = int(m.group(1)) * (1.6 if (m.group(2) or "").startswith("mi") else 1)
         changes["max_km"] = min(500, max(1, round(km)))
         t = _DISTANCE_RE.sub(" ", t)
-    elif not initial and _NEAR_RE.search(t):
+    elif _NEAR_RE.search(t):  # "pump near me" works in the search box itself
         changes["max_km"] = NEAR_KM
         t = _NEAR_RE.sub(" ", t)
 

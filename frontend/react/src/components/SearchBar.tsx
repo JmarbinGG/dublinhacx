@@ -27,6 +27,9 @@ export default function SearchBar({ initialQuery = '', size = 'bar' }: Props) {
     const params = new URLSearchParams(location.pathname === '/search' ? location.search : '')
     if (query) params.set('q', query)
     else params.delete('q')
+    // A new query starts fresh: no refinements, excluded terms or paging.
+    params.delete('r')
+    params.delete('x')
     params.delete('page')
     const search = params.toString()
     navigate(search ? `/search?${search}` : '/search')

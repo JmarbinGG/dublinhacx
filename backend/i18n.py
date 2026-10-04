@@ -18,6 +18,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import threading
 from contextvars import ContextVar
 from typing import Optional
@@ -262,10 +263,19 @@ def backfill() -> None:
 # else by the translation model. Cached either way.
 
 _STOP = {
-    "es": {"para", "de", "del", "la", "el", "los", "las", "un", "una", "unos", "unas", "con", "que", "mi", "mis",
+    "es": {"para", "de", "del", "mí", "mi", "aquí", "la", "el", "los", "las", "un", "una", "unos", "unas", "con", "que", "mi", "mis",
            "algo", "alguien", "necesito", "busco", "quiero", "y", "o", "en", "por", "a", "se", "me", "tu"},
-    "hi": {"के", "का", "की", "को", "में", "से", "पर", "और", "या", "लिए", "चाहिए", "है", "हैं", "मुझे", "कोई",
+    "hi": {"के", "का", "मेरे", "यहाँ", "यहां", "की", "को", "में", "से", "पर", "और", "या", "लिए", "चाहिए", "है", "हैं", "मुझे", "कोई",
            "एक", "मेरे", "मेरा", "मेरी", "वाला", "वाली", "वाले", "ढूंढ", "रहा", "रही", "हूं", "हूँ"},
+}
+# Filter words typed into the search box ("bomba cerca de mí", "मुफ़्त पंप पास में"):
+# mapped to the English the search rules understand (free, lend, near, within N km).
+_FILTER_WORDS = {
+    "gratis": "free", "regalo": "free", "prestado": "lend", "prestar": "lend", "préstamo": "lend",
+    "cerca": "near", "cercano": "near", "cercanos": "near", "dentro": "within", "km": "km",
+    "kilómetros": "km", "intercambio": "trade", "cambio": "trade",
+    "मुफ़्त": "free", "मुफ्त": "free", "फ्री": "free", "उधार": "lend", "पास": "near", "नज़दीक": "near",
+    "नजदीक": "near", "अंदर": "within", "भीतर": "within", "किमी": "km", "किलोमीटर": "km", "बदले": "trade",
 }
 _glossary: dict[str, str] = {}
 _glossary_key = None
@@ -311,7 +321,7 @@ def _from_glossary(db: DbSession, text: str) -> Optional[str]:
     while i < len(words):
         for size in (3, 2, 1):  # longest known phrase first ("máquina de coser")
             phrase = " ".join(words[i : i + size])
-            hit = gloss.get(phrase) or (gloss.get(phrase[:-1]) if phrase.endswith("s") else None) \
+            hit = (_FILTER_WORDS.get(phrase) if size == 1 else None) or gloss.get(phrase) or (gloss.get(phrase[:-1]) if phrase.endswith("s") else None) \
                 or (gloss.get(phrase[:-2]) if phrase.endswith("es") else None)
             if hit:
                 out.append(hit)
@@ -323,7 +333,10 @@ def _from_glossary(db: DbSession, text: str) -> Optional[str]:
             if words[i].isdigit():
                 out.append(words[i])
             i += 1
-    return " ".join(out) or None
+    english = " ".join(out)
+    # Hindi puts "within" after the distance ("10 किमी के अंदर" -> "10 km within").
+    english = re.sub(r"\b(\d{1,3}) km within\b", r"within \1 km", english)
+    return english or None
 
 
 class _Query(BaseModel):

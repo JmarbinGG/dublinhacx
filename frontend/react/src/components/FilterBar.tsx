@@ -6,7 +6,6 @@ import { EXCHANGES, LISTING_TYPES } from '../types'
 import HomePicker from './HomePicker'
 import Icon from './Icon'
 import MorphIcon from './MorphIcon'
-import { t } from '../i18n'
 
 /**
  * Two inline filters (distance, exchange) and one "More" sheet for the
@@ -49,22 +48,22 @@ export default function FilterBar({ showType = true, showKind = true }: { showTy
   return (
     <div className="filters">
       <label className="field field--inline">
-        <span className="visually-hidden">{t('filter.distance')}</span>
+        <span className="visually-hidden">Distance</span>
         <select
           value={filters.scope}
           onChange={(e) => set('scope', e.target.value === 'all' ? null : e.target.value)}
         >
           {SCOPES.map((scope) => (
             <option key={scope.id} value={scope.id} disabled={scope.id !== 'all' && !home}>
-              {scope.id === 'all' ? t('filter.anyDistance') : scope.label}
+              {scope.id === 'all' ? 'Any distance' : scope.label}
             </option>
           ))}
         </select>
       </label>
       <label className="field field--inline">
-        <span className="visually-hidden">{t('filter.exchange')}</span>
+        <span className="visually-hidden">Exchange</span>
         <select value={filters.exchange} onChange={(e) => set('ex', e.target.value)}>
-          <option value="">{t('filter.anyExchange')}</option>
+          <option value="">Any exchange</option>
           {EXCHANGES.map((exchange) => (
             <option key={exchange.id} value={exchange.id}>
               {exchange.label}
@@ -79,26 +78,26 @@ export default function FilterBar({ showType = true, showKind = true }: { showTy
         aria-controls="filter-sheet"
         onClick={() => setSheetOpen(true)}
       >
-        {t('filter.more')}{extraActive > 0 && ` (${extraActive})`}
+        More{extraActive > 0 && ` (${extraActive})`}
         <MorphIcon name="chevron" on={sheetOpen} />
       </button>
 
       {sheetOpen && (
         <>
           <div className="sheet-backdrop" onClick={() => setSheetOpen(false)} />
-          <div id="filter-sheet" className="sheet" role="dialog" aria-label={t('filter.moreFilters')} ref={sheetRef}>
+          <div id="filter-sheet" className="sheet" role="dialog" aria-label="More filters" ref={sheetRef}>
             <div className="sheet__head">
-              <h2>{t('filter.moreFilters')}</h2>
-              <button type="button" className="icon-button" aria-label={t('filter.close')} onClick={() => setSheetOpen(false)}>
+              <h2>More filters</h2>
+              <button type="button" className="icon-button" aria-label="Close filters" onClick={() => setSheetOpen(false)}>
                 <Icon name="x" />
               </button>
             </div>
             <HomePicker id="sheet-home" />
             {showType && (
               <label className="field">
-                <span>{t('filter.type')}</span>
+                <span>Type</span>
                 <select value={filters.type} onChange={(e) => set('type', e.target.value)}>
-                  <option value="">{t('filter.allTypes')}</option>
+                  <option value="">All types</option>
                   {LISTING_TYPES.map((type) => (
                     <option key={type.id} value={type.id}>
                       {type.label}
@@ -109,16 +108,16 @@ export default function FilterBar({ showType = true, showKind = true }: { showTy
             )}
             {showKind && (
               <label className="field">
-                <span>{t('filter.kind')}</span>
+                <span>Offers or wanted</span>
                 <select value={filters.kind} onChange={(e) => set('kind', e.target.value)}>
-                  <option value="">{t('filter.both')}</option>
-                  <option value="offer">{t('filter.offers')}</option>
-                  <option value="request">{t('kind.helpWanted')}</option>
+                  <option value="">Both</option>
+                  <option value="offer">Offers</option>
+                  <option value="request">Help wanted</option>
                 </select>
               </label>
             )}
             <label className="field">
-              <span>{t('filter.sort')}</span>
+              <span>Sort</span>
               <select
                 value={filters.sort}
                 disabled={!homePoint}
@@ -138,12 +137,12 @@ export default function FilterBar({ showType = true, showKind = true }: { showTy
                   checked={params.get('plain') === '1'}
                   onChange={(e) => set('plain', e.target.checked ? '1' : null)}
                 />
-                {t('filter.plain')}
+                Use plain keyword search
               </label>
             )}
-            {!home && <p className="hint">{t('filter.chooseTown')}</p>}
+            {!home && <p className="hint">Choose your town to filter by distance.</p>}
             <button type="button" className="primary-button" onClick={() => setSheetOpen(false)}>
-              {t('filter.done')}
+              Done
             </button>
           </div>
         </>

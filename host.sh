@@ -19,7 +19,7 @@ echo "Building frontend for https://$DOMAIN ..."
 (cd "$ROOT/frontend/react" && VITE_API_BASE_URL="https://$DOMAIN" npm run build >/dev/null)
 
 cd "$ROOT/backend"
-APP_ENV=production TRUST_PROXY=1 CORS_ORIGINS="https://$DOMAIN,https://www.$DOMAIN" \
+APP_ENV=production TRUST_PROXY=1 TRANSLATE_BACKFILL=1 CORS_ORIGINS="https://$DOMAIN,https://www.$DOMAIN" \
   python3 -m uvicorn main:app --host 127.0.0.1 --port "$PORT" --proxy-headers &
 API=$!
 trap 'kill $API 2>/dev/null' EXIT
