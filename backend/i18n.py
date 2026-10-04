@@ -264,7 +264,7 @@ def backfill() -> None:
 
 _STOP = {
     "es": {"para", "de", "del", "mí", "mi", "aquí", "la", "el", "los", "las", "un", "una", "unos", "unas", "con", "que", "mi", "mis",
-           "algo", "alguien", "necesito", "busco", "quiero", "y", "o", "en", "por", "a", "se", "me", "tu"},
+           "algo", "necesito", "busco", "quiero", "y", "o", "en", "por", "a", "se", "me", "tu"},
     "hi": {"के", "का", "मेरे", "यहाँ", "यहां", "की", "को", "में", "से", "पर", "और", "या", "लिए", "चाहिए", "है", "हैं", "मुझे", "कोई",
            "एक", "मेरे", "मेरा", "मेरी", "वाला", "वाली", "वाले", "ढूंढ", "रहा", "रही", "हूं", "हूँ"},
 }
@@ -272,7 +272,7 @@ _STOP = {
 # mapped to the English the search rules understand (free, lend, near, within N km).
 _FILTER_WORDS = {
     "gratis": "free", "regalo": "free", "prestado": "lend", "prestar": "lend", "préstamo": "lend",
-    "cerca": "near", "cercano": "near", "cercanos": "near", "dentro": "within", "km": "km",
+    "alguien": "someone", "persona": "someone", "cerca": "near", "cercano": "near", "cercanos": "near", "dentro": "within", "km": "km",
     "kilómetros": "km", "intercambio": "trade", "cambio": "trade",
     "मुफ़्त": "free", "मुफ्त": "free", "फ्री": "free", "उधार": "lend", "पास": "near", "नज़दीक": "near",
     "नजदीक": "near", "अंदर": "within", "भीतर": "within", "किमी": "km", "किलोमीटर": "km", "बदले": "trade",

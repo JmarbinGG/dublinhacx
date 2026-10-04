@@ -88,8 +88,15 @@ export default function DataBudgetImage({ src, alt, square, knownSizeKb, tileIco
         aria-label={[t('img.loadPhoto'), sizeKb ? size : '', overBudget ? t('img.overMonthly') : ''].filter(Boolean).join(', ')}
       >
         <Icon name={failed ? 'alert' : tileIcon} />
-        <span>{failed ? t('common.tryAgain') : size}</span>
-        {overBudget && !failed && <span className="photo-tile__warn">{t('img.overBudget')}</span>}
+        {/* Looks like a button so it's obvious the photo is one tap away. */}
+        <span className="photo-tile__cta">
+          <Icon name={failed ? 'alert' : 'image'} />
+          {failed ? t('common.tryAgain') : t('img.load')}
+        </span>
+        <span className="photo-tile__size">
+          {sizeKb ? size : ''}
+          {overBudget && !failed && <span className="photo-tile__warn"> · {t('img.overBudget')}</span>}
+        </span>
       </button>
     )
   }

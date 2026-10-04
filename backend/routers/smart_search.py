@@ -125,6 +125,9 @@ class SearchState(BaseModel):
     # Complex mode: listing ids the model judged actually relevant, best first.
     # Results are limited to these; cleared when the search terms change.
     picked: Optional[list[int]] = Field(None, max_length=40)
+    # "Someone who can fix my tractor": a listing must also mention one of
+    # these (repair, mechanic, ...) - the skill asked for, not just the thing.
+    skill_words: list[str] = Field([], max_length=12)
 
     @field_validator("terms", mode="before")
     @classmethod
@@ -220,6 +223,14 @@ CLEAR_ALL = {"attrs": [], "qty": None, "max_km": None, "exchange": None, "type":
 
 _DISTANCE_RE = re.compile(r"\bwithin\s+(\d{1,3})\s*(km|kms|kilometres?|kilometers?|mi|miles?)?\b")
 _NEAR_RE = re.compile(r"\b(near(by)?|close( by)?|local)\b")
+# Asking for a person ("someone who can fix my tractor", "need a mechanic")
+# means skills & jobs only - not the tractor itself.
+_PERSON_RE = re.compile(
+    r"\b(some(one|body)|any(one|body)|a person|people|who (can|could|knows?)|help(er)? (me |us )?(to |with )?"
+    r"(fix|repair|build|teach|install|make|cut|clean|dig|plough|harvest|stitch|paint)|"
+    r"mechanic|electrician|plumber|carpenter|mason|tailor|tutor|teacher|driver|welder|labou?rers?|workers?|"
+    r"repairman|technician|vet|cook|painter|helper)\b"
+)
 _ANY_RE = re.compile(r"\b(any|clear|reset)\s+(size|amount|quantity|distance|price|category|filters?)\b")
 _ONLY_RE = re.compile(r"^only\s+([a-z][a-z0-9 \-]{1,40})$")
 _COMPLEX_RE = re.compile(
@@ -338,6 +349,8 @@ def parse_rules(text: str, initial: bool) -> tuple[dict, list[str]]:
             changes["kind"] = KIND_WORDS[w]
         elif w not in FILLER and len(w) > 1:
             leftover.append(w)
+    if initial and "type" not in changes and _PERSON_RE.search(t):
+        changes["type"] = "skill"
     if attrs:
         changes["add_attrs"] = attrs
     return changes, leftover
@@ -500,6 +513,49 @@ class _ModelBudget:
             return None
 
 
+# What kind of work a person search asks for -> words a matching listing uses.
+_REPAIR = ["repair", "mechanic", "servicing", "service", "overhaul", "fix", "technician"]
+SKILL_GROUPS = {
+    **dict.fromkeys(["fix", "repair", "mend", "service", "mechanic", "technician", "repairman"], _REPAIR),
+    **dict.fromkeys(["build", "construct", "mason"], ["build", "building", "mason", "masonry", "construction"]),
+    **dict.fromkeys(["carpenter"], ["carpenter", "carpentry", "woodwork"]),
+    **dict.fromkeys(["teach", "tutor", "teacher", "coach"], ["teach", "teaching", "tuition", "tutor", "class", "lessons", "training", "coaching"]),
+    **dict.fromkeys(["install"], ["install", "installation", "fitting", "setup"]),
+    **dict.fromkeys(["drive", "driver"], ["driver", "drive", "transport"]),
+    **dict.fromkeys(["stitch", "sew", "tailor"], ["stitch", "stitching", "sewing", "tailor", "tailoring"]),
+    **dict.fromkeys(["paint", "painter"], ["paint", "painter", "painting"]),
+    **dict.fromkeys(["cook"], ["cook", "cooking", "catering"]),
+    **dict.fromkeys(["plumber"], ["plumber", "plumbing"]),
+    **dict.fromkeys(["electrician"], ["electrician", "electrical", "wiring"]),
+    **dict.fromkeys(["weld", "welder"], ["weld", "welding", "welder", "fabrication"]),
+    **dict.fromkeys(["vet"], ["vet", "veterinary", "vaccination", "animal"]),
+    **dict.fromkeys(["clean"], ["clean", "cleaning"]),
+    **dict.fromkeys(["dig"], ["dig", "digging", "excavator"]),
+    **dict.fromkeys(["harvest"], ["harvest", "harvesting", "picking"]),
+    **dict.fromkeys(["cut"], ["cut", "cutting", "pruning", "felling"]),
+}
+_PERSON_FILLER = {"someone", "somebody", "anyone", "anybody", "person", "people", "who", "can", "could", "knows",
+                  "know", "help", "helper", "me", "us", "my", "our", "need", "want", "looking", "find", "please",
+                  "labourer", "labourers", "laborer", "worker", "workers", "with", "for", "to", "a", "an", "the",
+                  "kid", "kids", "child", "children", "son", "daughter", "family", "home", "house", "come", "comes"}
+
+
+def person_search(q: str, base: SearchState) -> Optional[SearchState]:
+    """"Someone who can fix my tractor" -> people offering tractor repair,
+    nothing else. None if the query isn't asking for a person, or names no
+    thing to work on ("someone to help me")."""
+    if base.type != "skill":
+        return None
+    words = [w for w in re.findall(r"[a-z]+", q.lower()) if w not in STOPWORDS]
+    skills = [w for w in words if w in SKILL_GROUPS]
+    things = [w for w in words if w not in SKILL_GROUPS and w not in _PERSON_FILLER and w not in FILLER and len(w) > 2]
+    if not skills or not things:
+        return None
+    wanted = list(dict.fromkeys(x for w in skills for x in SKILL_GROUPS[w]))
+    return base.model_copy(update={"mode": "simple", "terms": [" ".join(things[:3])], "kind": "offer",
+                                   "skill_words": wanted})
+
+
 def new_search(db: DbSession, q: str, models: _ModelBudget) -> tuple[SearchState, bool]:
     """Returns (state, used_model)."""
     key = "new:" + " ".join(q.lower().split())
@@ -514,6 +570,8 @@ def new_search(db: DbSession, q: str, models: _ModelBudget) -> tuple[SearchState
     word_state = rule_state.model_copy(update={"mode": "complex", "terms": stems[:MAX_TERMS]}) if len(stems) > 1 else rule_state
     if looks_simple(q):
         return rule_state, False
+    if (person := person_search(q, rule_state)) is not None:
+        return person, False  # exact rules beat a model's loose guesses here
 
     # 1. Small model: simple or complex? (If it fails, trust the phrasing.)
     state, used = word_state, False
@@ -649,6 +707,13 @@ def run_state(
                 score, match, full = s, term, is_full
         if score == 0:
             continue
+        if state.skill_words:
+            # Person search: the thing and the skill both in the title or tags,
+            # not just somewhere in the description.
+            head = title + tags
+            if not any(word_hit(stem(w), head) for w in state.skill_words) or \
+                    not all(word_hit(w, head) for ws in term_words for w in ws):
+                continue
         if state.mode == "simple":
             # "tractor" + "repair": a listing with both beats one with either.
             score += 0.5 * (others - score)

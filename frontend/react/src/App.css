@@ -706,6 +706,35 @@
   color: var(--warn);
 }
 
+/* The "Load image" pill inside a card's photo slot. */
+.photo-tile__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.photo-tile__cta .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.photo-tile:hover .photo-tile__cta {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.photo-tile__size {
+  min-height: 1em;
+}
+
 /* A loaded photo keeps the same slot height, so the card doesn't grow. */
 .card > .budget-image:not(.photo-tile) {
   height: 120px;
