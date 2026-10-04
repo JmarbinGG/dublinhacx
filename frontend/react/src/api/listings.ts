@@ -111,3 +111,18 @@ export function uploadImage(file: Blob, token: string, signal?: AbortSignal): Pr
   form.append('file', file, file instanceof File ? file.name : 'photo.jpg')
   return request<{ url: string }>('/api/uploads', { method: 'POST', form, token, signal, timeoutMs: 60_000 })
 }
+
+export type PhotoDetails = {
+  title?: string
+  type?: ListingType
+  category?: string
+  tags?: string[]
+  quantity?: string
+  description?: string
+}
+
+/** POST /api/uploads/describe - the vision model's guess at what an
+ * uploaded photo shows, to pre-fill the form (~1-3 s). */
+export function describePhoto(url: string, token: string, signal?: AbortSignal): Promise<PhotoDetails> {
+  return request<PhotoDetails>('/api/uploads/describe', { method: 'POST', json: { url }, token, signal, timeoutMs: 20_000 })
+}

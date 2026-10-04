@@ -360,6 +360,9 @@ const hi: Record<Key, string> = {
   'error.unreachable': "बनयान तक नहीं पहुँच सके। अपना कनेक्शन जाँचें और फिर से कोशिश करें।",
   'error.offline': "आप ऑफलाइन हैं।",
   'error.unreadable': "सर्वर ने ऐसा जवाब भेजा जो हम पढ़ नहीं सके।",
+  'createListing.autofillReading': "आपकी फोटो देखकर जानकारी भर रहे हैं...",
+  'createListing.autofillDone': "फोटो से जानकारी भर दी गई - पोस्ट करने से पहले ऊपर की जानकारी जाँच लें।",
+  'createListing.autofillFailed': "फोटो पढ़ नहीं पाए - खुद जानकारी भरें।",
 }
 
 export default hi

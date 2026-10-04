@@ -63,7 +63,12 @@ def small_model() -> str:
 
 
 def estimate_tokens(messages: list[dict], max_tokens: int = MAX_OUTPUT_TOKENS) -> int:
-    return sum(len(m["content"]) for m in messages) // 4 + max_tokens
+    def size(content) -> int:  # text, or a list of parts (an image counts ~1000 tokens)
+        if isinstance(content, str):
+            return len(content) // 4
+        return sum(len(p.get("text", "")) // 4 if p.get("type") == "text" else 1000 for p in content)
+
+    return sum(size(m["content"]) for m in messages) + max_tokens
 
 
 _THINK_RE = re.compile(r"<think>.*?(</think>|$)", re.DOTALL)

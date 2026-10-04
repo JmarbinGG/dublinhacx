@@ -360,6 +360,9 @@ const es: Record<Key, string> = {
   'error.unreachable': "No se pudo conectar con Banyan. Revisa tu conexión e inténtalo de nuevo.",
   'error.offline': "Estás desconectado.",
   'error.unreadable': "El servidor envió una respuesta que no pudimos leer.",
+  'createListing.autofillReading': "Revisando tu foto para llenar los detalles...",
+  'createListing.autofillDone': "Completado desde tu foto - revisa los detalles antes de publicar.",
+  'createListing.autofillFailed': "No se pudo leer la foto - llena los detalles tú mismo.",
 }
 
 export default es

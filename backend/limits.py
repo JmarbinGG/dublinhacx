@@ -36,6 +36,7 @@ AI_LIMITS = {
     "search": (Limit(120, 60), Limit(60, 60)),  # GET /api/search when the AI search service is on
     # Smart search model calls. Over the limit it quietly uses rules instead of 429.
     "search_smart": (Limit(60, HOUR), Limit(20, HOUR)),
+    "describe_photo": (Limit(30, HOUR), Limit(5, HOUR)),  # needs sign-in anyway (uploads do)
 }
 IP_CEILING = Limit(200, HOUR)
 UPLOAD_LIMIT = Limit(30, HOUR)

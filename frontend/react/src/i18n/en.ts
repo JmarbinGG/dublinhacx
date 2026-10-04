@@ -367,6 +367,9 @@ const en = {
   'error.unreachable': "Couldn't reach Banyan. Check your connection and try again.",
   'error.offline': "You're offline.",
   'error.unreadable': "The server sent a response we could not read.",
+  'createListing.autofillReading': "Looking at your photo to fill in the details...",
+  'createListing.autofillDone': "Filled in from your photo - check the details above before posting.",
+  'createListing.autofillFailed': "Couldn't read the photo - fill in the details yourself.",
 }
 
 export type Key = keyof typeof en

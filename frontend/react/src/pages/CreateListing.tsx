@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { isNetworkError, resolveImageUrl } from '../api/client'
-import { createListing, updateListing, uploadImage, type ListingInput } from '../api/listings'
+import { createListing, describePhoto, updateListing, uploadImage, type ListingInput } from '../api/listings'
 import { useAuth } from '../auth/AuthContext'
 import { Loading } from '../components/States'
-import { formatKb } from '../context/DataBudgetContext'
+import { formatKb, useDataBudget } from '../context/DataBudgetContext'
 import { useListing } from '../hooks/useItems'
 import { TOPICS, isTopic } from '../lib/categories'
 import { ImageRejectedError, prepareImage } from '../lib/image'
@@ -47,6 +47,9 @@ export default function CreateListing() {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const uploadId = useRef(0)
+  const { aiAnswers } = useDataBudget()
+  // Photo -> suggested details: 'reading' while the model looks, then 'filled'.
+  const [autofill, setAutofill] = useState<'reading' | 'filled' | 'failed' | null>(null)
   const prefilled = useRef(false)
 
   // Prefill once when editing.
@@ -66,6 +69,27 @@ export default function CreateListing() {
     setImage(l.image ?? null)
   }, [editing, existing.data])
 
+  /** Fill empty fields from what the vision model sees. Never overwrites
+   * anything the user already typed; they check it before posting. */
+  async function fillFromPhoto(url: string, requestId: number) {
+    if (!token) return
+    setAutofill('reading')
+    try {
+      const d = await describePhoto(url, token)
+      if (requestId !== uploadId.current) return
+      const fresh = !title.trim()
+      if (d.title) setTitle((v) => v.trim() ? v : d.title!)
+      if (d.description) setDescription((v) => v.trim() ? v : d.description!)
+      if (d.quantity) setQuantity((v) => v.trim() ? v : d.quantity!)
+      if (d.tags?.length) setTags((v) => v.trim() ? v : d.tags!.join(', '))
+      if (d.category && isTopic(d.category)) setCategory((v) => v || d.category!)
+      if (fresh && d.type) setType(d.type)
+      setAutofill('filled')
+    } catch {
+      if (requestId === uploadId.current) setAutofill('failed')
+    }
+  }
+
   async function handlePhoto(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     event.target.value = '' // allow re-picking the same file
@@ -82,6 +106,7 @@ export default function CreateListing() {
       const { url } = await uploadImage(prepared.blob, token)
       if (requestId !== uploadId.current) return
       setImage(url)
+      if (!editing && aiAnswers) void fillFromPhoto(url, requestId)
     } catch (err) {
       if (requestId !== uploadId.current) return
       setPreview(null)
@@ -315,6 +340,7 @@ export default function CreateListing() {
                   className="link-button"
                   onClick={() => {
                     uploadId.current++
+                    setAutofill(null)
                     setImage(null)
                     setPreview(null)
                     setPhotoKb(null)
@@ -335,6 +361,11 @@ export default function CreateListing() {
           {photoError && (
             <p className="photo-status photo-status--error" role="alert">
               {photoError}
+            </p>
+          )}
+          {autofill && !uploading && (
+            <p className="photo-status" role="status">
+              {t(autofill === 'reading' ? 'createListing.autofillReading' : autofill === 'filled' ? 'createListing.autofillDone' : 'createListing.autofillFailed')}
             </p>
           )}
         </div>

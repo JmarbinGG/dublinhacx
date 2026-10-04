@@ -74,7 +74,7 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 # X-Lang: es | hi -> listings and bios in that language (i18n.py).
 app.add_middleware(i18n.LangMiddleware)
 
-AI_PATHS = ("/api/search/ai", "/api/search/smart", "/api/assistant")
+AI_PATHS = ("/api/search/ai", "/api/search/smart", "/api/assistant", "/api/uploads/describe")
 
 
 @app.exception_handler(RequestValidationError)
