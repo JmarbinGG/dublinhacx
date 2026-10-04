@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { QUERY_LIMIT, cleanQuery } from '../lib/text'
 import { cancelSearch, useSearchBusy } from '../lib/searchActivity'
+import { noteSubmit } from '../lib/searchSession'
 import MorphIcon from './MorphIcon'
 import { t } from '../i18n'
 
@@ -12,9 +13,10 @@ type Props = {
 }
 
 /**
- * The one search field. The server decides whether a query is simple
- * ("screws") or needs the AI ("things I can use to cut down a tree") - the
- * client just sends it. Submitting keeps the current filters on /search.
+ * The one search field - everything is natural language. The server
+ * decides whether a query is simple ("screws") or needs the AI ("things I
+ * can use to cut down a tree"), and whether text typed while looking at
+ * results ("only free ones") is a new search or narrows the last one.
  */
 export default function SearchBar({ initialQuery = '', size = 'bar' }: Props) {
   const [value, setValue] = useState(initialQuery)
@@ -24,12 +26,14 @@ export default function SearchBar({ initialQuery = '', size = 'bar' }: Props) {
 
   function go() {
     const query = cleanQuery(value)
-    const params = new URLSearchParams(location.pathname === '/search' ? location.search : '')
+    const onResults = location.pathname === '/search'
+    const params = new URLSearchParams(onResults ? location.search : '')
+    const previous = params.get('q')
+    // Typed while looking at results: a follow-up, carried with the last
+    // result's state. From anywhere else: a fresh search.
+    if (query) noteSubmit(query, onResults && !!previous && previous !== query)
     if (query) params.set('q', query)
     else params.delete('q')
-    // A new query starts fresh: no refinements, excluded terms or paging.
-    params.delete('r')
-    params.delete('x')
     params.delete('page')
     const search = params.toString()
     navigate(search ? `/search?${search}` : '/search')

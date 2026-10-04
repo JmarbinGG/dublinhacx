@@ -36,7 +36,7 @@ export default function RuralMarketCard({ listing, hideCategory, actions, note, 
       style={index !== undefined ? ({ '--i': index } as React.CSSProperties) : undefined}
     >
       {listing.image && (
-        <DataBudgetImage src={listing.image} alt={listing.title} knownSizeKb={listing.image_size_kb} tileIcon={group.icon} />
+        <DataBudgetImage src={listing.image} alt={listing.title} knownSizeKb={listing.image_size_kb} compact />
       )}
       <h3 className="card__title">
         <Link to={`/listings/${encodeURIComponent(listing.id)}`}>{listing.title}</Link>

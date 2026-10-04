@@ -1,32 +1,32 @@
 import { useEffect, useRef, useState } from 'react'
-import { topicLabel } from '../lib/categories'
+import { groupOf, topicLabel } from '../lib/categories'
 import { useSearchParams } from 'react-router-dom'
 import { PAGE_SIZE } from '../api/listings'
 import { useAuth } from '../auth/AuthContext'
 import CategoryTiles from '../components/CategoryTiles'
-import Icon from '../components/Icon'
 import ItemGrid from '../components/ItemGrid'
 import { SkeletonGrid } from '../components/States'
-import { NEARBY_KM, useCommunities } from '../context/CommunityContext'
+import { useCommunities } from '../context/CommunityContext'
 import { useDataBudget } from '../context/DataBudgetContext'
 import { useListings, useSummary } from '../hooks/useItems'
 import { useSmartSearch } from '../hooks/useSmartSearch'
+import type { SearchState } from '../api/smartSearch'
+import type { Listing } from '../types'
 import { filterExchange, readFilters, toListingQuery } from '../lib/filters'
 import { timeAgo } from '../lib/geo'
-import { REFINE_LIMIT, cleanText, redactPersonal } from '../lib/text'
+import { redactPersonal } from '../lib/text'
 import { t } from '../i18n'
 
 const MAX_PAGES = 8
-const MAX_REFINEMENTS = 5
 
 /**
  * /search. With a query, the one search bar goes to POST /api/search/smart,
  * where the server decides simple vs complex (AI). Without one - or with
  * plain search / AI off - it's the filterable browse feed from /api/listings.
  *
- * URL: q, r (refinements, repeated), x (interpreted terms removed, repeated),
- * plus the filter params. So the back button and repeat searches reuse the
- * cached answer.
+ * Everything is natural language: a follow-up ("only free ones") is just
+ * typed into the bar. The URL holds only the latest text (q), so back and
+ * forward work and replay cached answers.
  */
 export default function SearchResults() {
   const [params, setParams] = useSearchParams()
@@ -35,8 +35,6 @@ export default function SearchResults() {
   const { home, homePoint } = useCommunities()
   const { aiAnswers } = useDataBudget()
   const plain = params.get('plain') === '1'
-  const refinements = params.getAll('r')
-  const excluded = params.getAll('x')
 
   // AI switched off in Data saver => plain keyword search only.
   const usingSmart = !!filters.q && !plain && aiAnswers
@@ -45,15 +43,7 @@ export default function SearchResults() {
       ? {
           // Contact details never leave the device, even inside a query.
           q: redactPersonal(filters.q).text,
-          refinements: refinements.map((r) => redactPersonal(r).text),
-          exclude: excluded,
           community: home,
-          filters: {
-            type: filters.type || undefined,
-            kind: filters.kind || undefined,
-            exchange: filters.exchange || undefined,
-            maxKm: filters.scope === 'near' ? NEARBY_KM : undefined,
-          },
         }
       : null,
     token,
@@ -76,18 +66,6 @@ export default function SearchResults() {
     setParams(next, { replace })
   }
 
-  const addRefinement = (term: string) => {
-    const clean = cleanText(term, REFINE_LIMIT)
-    if (!clean || refinements.includes(clean) || refinements.length >= MAX_REFINEMENTS) return
-    update((next) => next.append('r', clean))
-  }
-  const removeRefinement = (term: string) =>
-    update((next) => {
-      next.delete('r')
-      refinements.filter((r) => r !== term).forEach((r) => next.append('r', r))
-    })
-  const removeInterpreted = (term: string) => update((next) => next.append('x', term))
-
   // Complex (AI) searches take a few seconds; after a moment, say so.
   const [slow, setSlow] = useState(false)
   useEffect(() => {
@@ -103,6 +81,7 @@ export default function SearchResults() {
   }, [filters.q])
 
   const meta = smart.result
+  const understood = meta && meta.source === 'smart' ? describeUnderstanding(meta.state, meta.mode, filters.q, meta.summary) : null
   const notes = meta ? new Map(Object.entries(meta.matches).map(([id, term]) => [Number(id), `Matches: ${term}`])) : undefined
   const listings = usingSmart ? smart.listings : browseListings
 
@@ -120,46 +99,13 @@ export default function SearchResults() {
 
       {usingSmart && (
         <>
-          {meta?.mode === 'complex' && meta.state.terms.length > 0 && (
-            <div className="interpreted" aria-label={t('searchResults.whatWeSearchedFor')}>
-              <span className="hint">{meta.state.need ? t('searchResults.toNeedSearchedFor', { need: meta.state.need }) : t('searchResults.searchedFor')}</span>
-              {meta.state.terms.map((term) => (
-                <span key={term} className="chip chip--removable">
-                  {term}
-                  <button type="button" aria-label={t('searchResults.dontSearchFor', { term })} onClick={() => removeInterpreted(term)}>
-                    <Icon name="x" />
-                  </button>
-                </span>
-              ))}
-              {excluded.length > 0 && (
-                <button type="button" className="link-button" onClick={() => update((next) => next.delete('x'))}>
-                  {t('searchResults.undo')}
-                </button>
-              )}
-            </div>
+          {/* How the search was understood: plain, read-only text. To change
+              it, the user types a follow-up into the bar. */}
+          {understood && (
+            <p className="understood" aria-label={t('searchResults.whatWeSearchedFor')}>
+              {understood}
+            </p>
           )}
-
-          {meta?.state.category && (
-            <div className="interpreted" aria-label={t('searchResults.category')}>
-              <span className="hint">{t('searchResults.category')}:</span>
-              <span className="chip chip--removable">
-                {topicLabel(meta.state.category)}
-                <button type="button" aria-label={t('searchResults.anyCategory')} onClick={() => addRefinement('any category')}>
-                  <Icon name="x" />
-                </button>
-              </span>
-            </div>
-          )}
-
-          <RefineBar
-            query={filters.q}
-            refinements={refinements}
-            suggestions={(meta?.suggestions ?? []).filter((s) => !refinements.includes(s.refine))}
-            onAdd={addRefinement}
-            onRemove={removeRefinement}
-            onClear={() => update((next) => next.delete('r'))}
-            full={refinements.length >= MAX_REFINEMENTS}
-          />
 
           {/* One fixed-height slot for every status line, so swapping
               "Searching..." for a note never pushes the results down. */}
@@ -207,11 +153,7 @@ export default function SearchResults() {
           loading={usingSmart ? smart.loading : browse.loading}
           error={usingSmart ? smart.error : browse.error}
           emptyMessage={
-            filters.q
-              ? refinements.length
-                ? t('searchResults.nothingMatchesRefinements')
-                : t('searchResults.nothingMatchedQuery', { query: filters.q })
-              : t('searchResults.nothingMatchesFilters')
+            filters.q ? t('searchResults.nothingMatchedQuery', { query: filters.q }) : t('searchResults.nothingMatchesFilters')
           }
           onRetry={usingSmart ? smart.retry : browse.reload}
           notes={usingSmart ? notes : undefined}
@@ -240,77 +182,28 @@ export default function SearchResults() {
   )
 }
 
-type RefineProps = {
-  query: string
-  refinements: string[]
-  suggestions: { label: string; refine: string }[]
-  onAdd: (term: string) => void
-  onRemove: (term: string) => void
-  onClear: () => void
-  full: boolean
-}
-
 /**
- * "screws › 5 › small": tap a suggestion or add a word at a time. Terms go
- * to the server raw - the client never guesses whether "5" is a quantity
- * or a size.
+ * "To cut down a tree, searched for: axe, saw · in Equipment & tools".
+ * Built only from the server's state - the client interprets nothing. The
+ * server's own summary (e.g. "No skills found, showing everything") wins
+ * when it sends one.
  */
-function RefineBar({ query, refinements, suggestions, onAdd, onRemove, onClear, full }: RefineProps) {
-  const [draft, setDraft] = useState('')
-
-  return (
-    <div className="refine">
-      {refinements.length > 0 && (
-        <ol className="refine__trail" aria-label={t('searchResults.searchAndRefinements')}>
-          <li>{query}</li>
-          {refinements.map((term) => (
-            <li key={term}>
-              <span className="chip chip--removable">
-                {term}
-                <button type="button" aria-label={t('searchResults.removeTerm', { term })} onClick={() => onRemove(term)}>
-                  <Icon name="x" />
-                </button>
-              </span>
-            </li>
-          ))}
-          <li>
-            <button type="button" className="link-button" onClick={onClear}>
-              {t('searchResults.clearRefinements')}
-            </button>
-          </li>
-        </ol>
-      )}
-
-      <div className="refine__row">
-        {suggestions.map((s) => (
-          <button key={s.refine} type="button" className="chip" disabled={full} onClick={() => onAdd(s.refine)}>
-            + {s.label}
-          </button>
-        ))}
-        <form
-          className="refine__form"
-          onSubmit={(e) => {
-            e.preventDefault()
-            onAdd(draft)
-            setDraft('')
-          }}
-        >
-          <label className="visually-hidden" htmlFor="refine-input">
-            {t('searchResults.narrowDown')}
-          </label>
-          <input
-            id="refine-input"
-            value={draft}
-            maxLength={REFINE_LIMIT}
-            disabled={full}
-            placeholder={full ? t('searchResults.enoughRefinements') : t('searchResults.narrowDownPlaceholder')}
-            onChange={(e) => setDraft(e.target.value)}
-          />
-          <button type="submit" className="secondary-button" disabled={full || !draft.trim()}>
-            {t('searchResults.add')}
-          </button>
-        </form>
-      </div>
-    </div>
-  )
+function describeUnderstanding(
+  state: SearchState,
+  mode: 'simple' | 'complex',
+  q: string,
+  summary: string | null,
+): string | null {
+  const parts: string[] = []
+  const terms = state.terms.join(', ')
+  if (state.terms.length && (mode === 'complex' || state.terms.join(' ').toLowerCase() !== q.toLowerCase())) {
+    parts.push(state.need ? `${t('searchResults.toNeedSearchedFor', { need: state.need })} ${terms}` : `${t('searchResults.searchedFor')} ${terms}`)
+  }
+  if (state.kind === 'request' || state.type) {
+    const group = groupOf({ type: (state.type ?? 'material') as Listing['type'], kind: (state.kind ?? 'offer') as Listing['kind'] })
+    parts.push(t('searchResults.inGroup', { group: group.label }))
+  }
+  if (state.category) parts.push(topicLabel(state.category))
+  if (summary) parts.push(summary)
+  return parts.length ? parts.join(' · ') : null
 }

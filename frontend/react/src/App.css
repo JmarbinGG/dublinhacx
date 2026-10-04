@@ -450,85 +450,13 @@
   vertical-align: 2px;
 }
 
-/* ---------- search: interpreted terms + refine ---------- */
+/* ---------- search: how the query was understood (read-only) ---------- */
 
-.interpreted,
-.refine__row,
-.refine__trail {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.refine {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.refine__trail {
-  list-style: none;
+.understood {
   margin: 0;
-  padding: 0;
-  font-weight: 600;
-}
-
-/* "screws › 5 › small" */
-.refine__trail li + li::before {
-  content: '›';
-  margin-right: 6px;
   color: var(--muted);
-  font-weight: 400;
-}
-
-.refine__trail li:last-child::before {
-  content: none;
-}
-
-.chip--removable {
-  gap: 4px;
-  padding-right: 4px;
-}
-
-.chip--removable button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border: none;
-  background: none;
-  border-radius: var(--radius);
-  color: var(--muted);
-  padding: 0;
-}
-
-.chip--removable button:hover {
-  background: var(--sunken);
-  color: var(--text);
-}
-
-.refine__form {
-  display: flex;
-  gap: 6px;
-  flex: 1 1 220px;
-  max-width: 320px;
-}
-
-.refine__form input {
-  flex: 1;
-  min-width: 0;
-  min-height: 36px;
-  padding: 6px 10px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius);
-  background: var(--surface);
-}
-
-.refine__form .secondary-button {
-  min-height: 36px;
-  padding: 4px 12px;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
 }
 
 .status-slot {
@@ -670,75 +598,6 @@
 ::view-transition-old(root),
 ::view-transition-new(root) {
   animation-duration: 150ms;
-}
-
-/* ---------- photo tile (card slot) ---------- */
-
-.photo-tile {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  width: 100%;
-  height: 120px;
-  aspect-ratio: auto;
-  margin-bottom: 4px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--sunken);
-  color: var(--muted);
-  font-size: 0.8rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.photo-tile .icon {
-  width: 22px;
-  height: 22px;
-}
-
-.photo-tile:hover {
-  color: var(--text);
-  border-color: var(--line-strong);
-}
-
-.photo-tile__warn {
-  color: var(--warn);
-}
-
-/* The "Load image" pill inside a card's photo slot. */
-.photo-tile__cta {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 36px;
-  padding: 6px 14px;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text);
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-
-.photo-tile__cta .icon {
-  width: 16px;
-  height: 16px;
-}
-
-.photo-tile:hover .photo-tile__cta {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.photo-tile__size {
-  min-height: 1em;
-}
-
-/* A loaded photo keeps the same slot height, so the card doesn't grow. */
-.card > .budget-image:not(.photo-tile) {
-  height: 120px;
-  aspect-ratio: auto;
 }
 
 /* ---------- cards ---------- */
@@ -885,6 +744,7 @@
 /* ---------- tap-to-load photo ---------- */
 
 .budget-image {
+  position: relative;
   border-radius: var(--radius);
   overflow: hidden;
   background: var(--sunken);
@@ -900,34 +760,18 @@
   animation: fade 200ms var(--ease-out);
 }
 
-.budget-image--placeholder {
-  aspect-ratio: auto;
+/* Waiting for a tap: sits above the card's stretched title link, so the
+   button (and the slot around it) never opens the listing. */
+.budget-image--waiting {
+  z-index: 1;
   display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: center;
-  column-gap: 10px;
-  padding: 10px 12px;
+  place-items: center;
   border: 1px dashed var(--line-strong);
-  background: var(--sunken);
 }
 
-.budget-image__size {
-  font-weight: 600;
-  font-size: 0.9rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.budget-image__hint {
-  grid-column: 1;
-  font-size: 0.8rem;
-  color: var(--muted);
-}
-
-.budget-image__button {
-  grid-column: 2;
-  grid-row: 1 / 3;
-  min-height: 34px;
-  padding: 4px 12px;
+.budget-image--compact {
+  height: 120px;
+  aspect-ratio: auto;
 }
 
 .budget-image--square {
@@ -935,14 +779,61 @@
   aspect-ratio: 1;
 }
 
-.budget-image--square.budget-image--placeholder {
-  grid-template-columns: 1fr;
-  row-gap: 6px;
+.budget-image__prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  text-align: center;
 }
 
-.budget-image--square .budget-image__button {
-  grid-column: 1;
-  grid-row: auto;
+.budget-image__button {
+  min-height: 44px;
+  font-variant-numeric: tabular-nums;
+}
+
+.budget-image__error {
+  font-size: 0.85rem;
+  color: var(--danger);
+}
+
+.budget-image__warn {
+  font-size: 0.8rem;
+  color: var(--warn);
+}
+
+/* Downloading: the photo is already in the slot, invisible, until it's in. */
+.budget-image__pending {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+
+.budget-image__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.load-all {
+  align-self: flex-start;
+  min-height: 44px;
 }
 
 /* ---------- filters + sheet ---------- */
