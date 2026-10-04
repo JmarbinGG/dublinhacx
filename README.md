@@ -1,6 +1,6 @@
 # Banyan
-##By Jahan and Alek
-##First Place in CWP Track at DublinHacx
+## By Jahan and Alek
+## First Place in CWP Track at DublinHacx
 **Share what you have. Find what you need.**
 
 Banyan connects neighbours in small rural towns, and the towns around them, to share spare
